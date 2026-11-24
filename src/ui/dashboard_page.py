@@ -1,4 +1,5 @@
 """Present the confirmed financials and the deterministic screening results."""
+import re
 from math import isfinite
 
 import streamlit as st
@@ -7,6 +8,7 @@ from src import config, engine, state
 from src.ai_analyst import CreditCommentary, generate_commentary
 from src.charts import cash_flow_chart, debt_chart, margin_chart, ratio_value, revenue_chart, score_gauge
 from src.models import ALL_FIELDS, FIELD_LABELS, AnalysisResult, RatioStatus, SourceType
+from src.report_generator import build_html_report
 from src.ui.theme import badge, metric_card, section_header
 
 SOURCE_LABELS = {
@@ -205,6 +207,17 @@ def _commentary(c: CreditCommentary) -> None:
                 st.text(item)
 
 
+def _export(analysis: AnalysisResult, commentary: CreditCommentary) -> None:
+    section_header("Export")
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "_", analysis.financials.company.name).strip("_-")[:80] or "company"
+    st.download_button(
+        "Download Credit Analysis Report",
+        data=build_html_report(analysis, commentary).encode("utf-8"),
+        file_name=f"{slug}_credit_screening_{analysis.generated_at.date().isoformat()}.html",
+        mime="text/html",
+    )
+
+
 def render() -> None:
     """Render the dashboard for the current confirmed company."""
     st.title(config.APP_NAME)
@@ -239,7 +252,7 @@ def render() -> None:
     _ratios(analysis)
     _trends(analysis)
     _alerts(analysis)
-    _commentary(generate_commentary(analysis, allow_external_llm=False))
+    commentary = generate_commentary(analysis, allow_external_llm=False)
+    _commentary(commentary)
     _quality(analysis)
-    section_header("Export")
-    st.info("Report downloads are planned for a later release.")
+    _export(analysis, commentary)
