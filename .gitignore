@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets (only .env.example is committed)
+.env
+.streamlit/secrets.toml
+
+# SEC cache (keep the folder)
+data/cache/*
+!data/cache/.gitkeep
+
+# Possibly confidential documents
+data/**/*.pdf
+uploads/**/*.pdf
+# (synthetic test PDFs live in tests/fixtures and ARE committed)
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
