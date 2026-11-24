@@ -12,12 +12,12 @@ from src import config
 from src.models import (AnalysisResult, CompanyFinancials, CompanyMatch,
                         PublicDataResult)
 
-_PAGE = "_credara_page"
-_COMPANY = "_credara_selected_company"
-_PUBLIC = "_credara_public_result"
-_FINANCIALS = "_credara_financials"
-_ANALYSIS = "_credara_analysis"
-_CONSENT = "_credara_llm_consent"
+_PAGE = "_solviq_page"
+_COMPANY = "_solviq_selected_company"
+_PUBLIC = "_solviq_public_result"
+_FINANCIALS = "_solviq_financials"
+_ANALYSIS = "_solviq_analysis"
+_CONSENT = "_solviq_llm_consent"
 
 _DEFAULTS = {
     _PAGE: config.PAGES[0],

@@ -1,4 +1,4 @@
-"""Shared data contract for Credara. Owned by Person 1.
+"""Shared data contract for SolvIQ. Owned by Person 1.
 Do not rename or remove fields without agreement from the whole team."""
 from __future__ import annotations
 

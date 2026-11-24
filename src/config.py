@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # The app name lives here only (single source of truth); every other module imports it.
-APP_NAME = "Credara"
+APP_NAME = "SolvIQ"
 TAGLINE = "Smarter Corporate Credit Decisions, Powered by AI."
 HOME_HEADING = "Analyze Any Company's Financial Health"
 HOME_SUBTITLE = ("Enter a company name to discover publicly available financial statements "

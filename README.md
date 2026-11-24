@@ -1,8 +1,8 @@
-# Credara
+# SolvIQ
 
 **Smarter Corporate Credit Decisions, Powered by AI.**
 
-Credara is a Streamlit web app that helps corporate credit analysts do a **first-pass credit risk screen** of a non-financial company. The analyst searches for a company, the app retrieves up to three years of annual financial statements from SEC EDGAR (or the analyst uploads PDF statements or types the figures in), and a deterministic engine computes financial ratios, an illustrative screening score and rule-based risk alerts. A dashboard presents the results with charts, a written commentary and a downloadable report.
+SolvIQ is a Streamlit web app that helps corporate credit analysts do a **first-pass credit risk screen** of a non-financial company. The analyst searches for a company, the app retrieves up to three years of annual financial statements from SEC EDGAR (or the analyst uploads PDF statements or types the figures in), and a deterministic engine computes financial ratios, an illustrative screening score and rule-based risk alerts. A dashboard presents the results with charts, a written commentary and a downloadable report.
 
 It is built for credit analysts, commercial lending teams and credit risk departments who today collect figures by hand from filings into spreadsheets. Every figure keeps its source, and the analyst confirms any PDF or manual values before they are used.
 
