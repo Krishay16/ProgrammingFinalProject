@@ -1,6 +1,4 @@
-# Credara (provisional name)
-
-> The app name is a placeholder defined once in `src/config.py` (`APP_NAME`). Change it there when the team decides.
+# Credara
 
 **Smarter Corporate Credit Decisions, Powered by AI.**
 

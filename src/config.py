@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# NOTE: provisional name. Change it here only (single source of truth) once the team picks one.
+# The app name lives here only (single source of truth); every other module imports it.
 APP_NAME = "Credara"
 TAGLINE = "Smarter Corporate Credit Decisions, Powered by AI."
 HOME_HEADING = "Analyze Any Company's Financial Health"
