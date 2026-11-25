@@ -253,8 +253,15 @@ LABEL_MAP: dict[str, list[str]] = {
                             "flux de tresorerie lies aux activites de financement",
                             "flux net de tresorerie lie aux operations de financement"],
 }
-# Rows containing these words are not the line item itself (e.g. "Net income per share").
-_EXCLUDE = re.compile(r"per share|par action|%|margin %|growth|attributable to non")
+# Rows containing these words are not the line item itself, e.g. "Net income per share",
+# or the balance-sheet grand total "Total liabilities and equity" (= total assets), which
+# would otherwise be read as total liabilities (or, in IFRS wording, as total equity).
+_EXCLUDE = re.compile(
+    r"per share|par action|%|growth|attributable to non"
+    r"|liabilities and (shareholders'?|stockholders'?|owners'?)? ?(equity|deficit)"
+    r"|equity and liabilities"
+    r"|passifs? et capitaux propres|capitaux propres et passifs?"
+    r"|sales and marketing|selling|right[- ]of[- ]use")
 _SYNONYMS = sorted(((normalise(s), f) for f, ss in LABEL_MAP.items() for s in ss),
                    key=lambda x: -len(x[0]))
 
