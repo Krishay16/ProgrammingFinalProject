@@ -91,6 +91,48 @@ def test_match_label(label, field):
     assert match_label(label)[0] == field
 
 
+@pytest.mark.parametrize("label", [
+    "Total liabilities and equity", "Total liabilities and shareholders' equity",
+    "Total liabilities and stockholders' equity", "Total liabilities and stockholders’ deficit",
+    "Total equity and liabilities", "Total passif et capitaux propres",
+    "Total capitaux propres et passifs", "Sales and marketing",
+    "Selling, general and administrative", "Depreciation of right-of-use assets",
+])
+def test_match_label_rejects_grand_totals_and_look_alike_rows(label):
+    assert match_label(label) is None
+
+
+def test_balance_sheet_grand_total_is_not_taken_as_total_liabilities():
+    """Review of PR #8 (Oshank21): this row was read as total liabilities with status ok."""
+    pdf = make_pdf([["Balance Co (SYNTHETIC)", "Balance sheet (in millions of USD)",
+                     ("", "2024", "2023"), ("Total assets", "1,000", "900"),
+                     ("Total equity", "400", "350"),
+                     ("Total liabilities and equity", "1,000", "900")]])
+    result = extract_financials([("bs.pdf", pdf)])
+    fields = {it.field for it in result.items}
+    assert "total_liabilities" not in fields                   # missing, not 1,000
+    assert _value(result, "total_equity", 2024).value == 400_000_000.0
+
+
+def test_ifrs_equity_and_liabilities_total_is_not_taken_as_equity():
+    pdf = make_pdf([["IFRS Co (SYNTHETIC)", "Statement of financial position (in EUR millions)",
+                     ("", "2024", "2023"), ("Total equity", "400", "350"),
+                     ("Total equity and liabilities", "1,000", "900")]])
+    item = _value(extract_financials([("ifrs.pdf", pdf)]), "total_equity", 2024)
+    assert item.value == 400_000_000.0 and item.status == "ok"
+
+
+def test_real_sales_row_not_confused_with_sales_and_marketing():
+    pdf = make_pdf([["Sales Co (SYNTHETIC)", "Income statement (in millions of USD)",
+                     ("", "2024", "2023"), ("Sales", "900", "800"),
+                     ("Sales and marketing", "120", "110"),
+                     ("Depreciation of right-of-use assets", "15", "14")]])
+    result = extract_financials([("s.pdf", pdf)])
+    item = _value(result, "revenue", 2024)
+    assert item.value == 900_000_000.0 and item.status == "ok"
+    assert "depreciation_amortization" not in {it.field for it in result.items}
+
+
 def test_match_label_rejects_per_share_and_unknown_lines():
     assert match_label("Net income per share") is None
     assert match_label("Goodwill") is None
