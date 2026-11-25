@@ -153,6 +153,34 @@ def resize_table(df: pd.DataFrame, years: list[int]) -> pd.DataFrame:
     return new
 
 
+def relabel_years(df: pd.DataFrame, years: list[int]) -> pd.DataFrame:
+    """Same number of years, new labels: keep every value in its column position.
+
+    Used when the analyst corrects "Latest fiscal year" (e.g. 2025 -> 2024) after typing
+    figures: the column of values moves with the label instead of being dropped.
+    """
+    new = empty_table(years)
+    old_cols, new_cols = year_columns(df), year_columns(new)
+    for old_c, new_c in zip(old_cols, new_cols):
+        new[new_c] = df[old_c].reindex(new.index).astype("object").values
+    return new
+
+
+_DOT_THOUSANDS = re.compile(r"^\(?[-+]?\d{1,3}\.\d{3}\)?$")
+
+
+def dot_thousands_cells(df: pd.DataFrame) -> list[tuple[str, str, str]]:
+    """Cells like "1.234": read as 1.234 (decimal point), but a European user may mean
+    1,234. Listed so the page can warn; the value itself is not changed or guessed."""
+    out = []
+    for c in year_columns(df):
+        for field in ALL_FIELDS:
+            raw = df.at[field, c] if field in df.index else None
+            if isinstance(raw, str) and _DOT_THOUSANDS.match(raw.strip().replace(" ", "")):
+                out.append((field, c, raw))
+    return out
+
+
 def unreadable_cells(df: pd.DataFrame) -> list[tuple[str, str, str]]:
     """List (field, year, raw text) for every cell that could not be read as a number."""
     out = []

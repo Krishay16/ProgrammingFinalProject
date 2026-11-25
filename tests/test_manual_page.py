@@ -110,3 +110,21 @@ def test_clear_form_empties_values():
     _button(at, "Clear form").click().run()
     df = at.session_state[K + "df"]
     assert df[["2024"]].isna().all().all()
+
+
+def test_correcting_latest_year_keeps_typed_values():
+    """Review of PR #7 (Oshank21): changing the year used to erase every value."""
+    at = _manual_page()
+    _fill(at, BS_AND_IS, years=(2024,))
+    at.run()
+    at.number_input(key=K + "latest_year").set_value(2023).run()
+    assert not at.exception
+    df = at.session_state[K + "df"]
+    assert "2023" in df.columns and df.at["revenue", "2023"] == "1,500"
+
+
+def test_value_like_1_234_shows_a_warning():
+    at = _manual_page()
+    _fill(at, {**BS_AND_IS, ("revenue", "2024"): "1.234"})
+    at.run()
+    assert any("1.234" in w.value and "decimal point" in w.value for w in at.warning)

@@ -4,7 +4,7 @@ import math
 import pandas as pd
 import pytest
 
-from src.manual_input import (blocked_ratios, empty_table, financials_from_json,
+from src.manual_input import (blocked_ratios, dot_thousands_cells, empty_table, relabel_years, financials_from_json,
                               financials_to_json, financials_to_table, parse_cell,
                               resize_table, table_to_financials, unreadable_cells)
 from src.models import (ALL_FIELDS, SourceType, Units, ValueOrigin, VerificationStatus)
@@ -187,3 +187,18 @@ def test_blocked_ratios_none_for_complete_synthetic_sample():
     assert blocked[2024] == {} and blocked[2023] == {}
     assert list(blocked[2022]) == ["Revenue Growth"]   # no FY2021 in the fixture
     assert not math.isnan(make_sample_financials().latest().get("revenue"))
+
+
+# ---------------------------------------------------------------- review of PR #7 (Oshank21)
+def test_relabel_years_keeps_values_when_latest_year_is_corrected():
+    df = _table({("revenue", "2025"): "1,500"}, years=(2025,))
+    fixed = relabel_years(df, [2024])
+    assert list(fixed.columns) == ["Line item", "2024"]
+    assert fixed.at["revenue", "2024"] == "1,500"          # not dropped
+
+
+def test_dot_thousands_cells_lists_values_like_1_234():
+    df = _table({("revenue", "2024"): "1.234", ("cash", "2024"): "1.5",
+                 ("ebit", "2024"): "(2.500)", ("total_assets", "2024"): "1.234,5"})
+    assert {(f, y) for f, y, _ in dot_thousands_cells(df)} == {("revenue", "2024"),
+                                                              ("ebit", "2024")}

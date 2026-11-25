@@ -258,8 +258,8 @@ LABEL_MAP: dict[str, list[str]] = {
 # would otherwise be read as total liabilities (or, in IFRS wording, as total equity).
 _EXCLUDE = re.compile(
     r"per share|par action|%|growth|attributable to non"
-    r"|liabilities and (shareholders'?|stockholders'?|owners'?)? ?(equity|deficit)"
-    r"|equity and liabilities"
+    r"|liabilities (and|&) (shareholders'?|stockholders'?|owners'?)? ?(equity|deficit)"
+    r"|equity (and|&) liabilities"
     r"|passifs? et capitaux propres|capitaux propres et passifs?"
     r"|sales and marketing|selling|right[- ]of[- ]use")
 _SYNONYMS = sorted(((normalise(s), f) for f, ss in LABEL_MAP.items() for s in ss),
