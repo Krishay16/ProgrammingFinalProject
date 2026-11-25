@@ -95,6 +95,8 @@ def test_match_label(label, field):
     "Total liabilities and equity", "Total liabilities and shareholders' equity",
     "Total liabilities and stockholders' equity", "Total liabilities and stockholders’ deficit",
     "Total equity and liabilities", "Total passif et capitaux propres",
+    "Total liabilities & equity", "Total liabilities & shareholders' equity",
+    "Total equity & liabilities",
     "Total capitaux propres et passifs", "Sales and marketing",
     "Selling, general and administrative", "Depreciation of right-of-use assets",
 ])
@@ -112,6 +114,15 @@ def test_balance_sheet_grand_total_is_not_taken_as_total_liabilities():
     fields = {it.field for it in result.items}
     assert "total_liabilities" not in fields                   # missing, not 1,000
     assert _value(result, "total_equity", 2024).value == 400_000_000.0
+
+
+def test_grand_total_written_with_ampersand_is_not_taken_as_liabilities():
+    """Second review of PR #9 (Oshank21): "&" instead of "and" still matched."""
+    pdf = make_pdf([["Amp Co (SYNTHETIC)", "Balance sheet (in millions of USD)",
+                     ("", "2024", "2023"), ("Total equity", "400", "350"),
+                     ("Total liabilities & equity", "1,000", "900")]])
+    result = extract_financials([("amp.pdf", pdf)])
+    assert "total_liabilities" not in {it.field for it in result.items}
 
 
 def test_ifrs_equity_and_liabilities_total_is_not_taken_as_equity():
