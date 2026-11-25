@@ -112,12 +112,10 @@ def _ratio_name(key: str) -> str:
 
 
 def fmt_value(value: float, unit: str) -> str:
-    """1.846 -> '1.85x'; 0.15 -> '15.0%'."""
+    """Ratio display: 1.846 -> '1.85x'; 0.15 -> '15.0%'. Money amounts use fmt_money."""
     if unit == "%":
         return f"{value * 100:.1f}%"
-    if unit == "x":
-        return f"{value:.2f}x"
-    return f"{value:,.0f}"
+    return f"{value:.2f}x"
 
 
 def _fmt_number(threshold: float, unit: str) -> str:
@@ -135,6 +133,21 @@ def _fmt_threshold(threshold: float, unit: str) -> str:
 
 def _fmt_points(points: float) -> str:
     return f"{points:g}"
+
+
+def fmt_money(value: float, currency: str) -> str:
+    """Compact DISPLAY text for a full-unit money amount (stored values are never changed).
+
+    abs >= 1 billion -> '-1.2bn USD'; abs >= 1 million -> '-500.0m USD';
+    otherwise -> '-12,345 USD'.
+    The unit is chosen AFTER rounding, so 999,960,000 (999.96m -> 1,000.0m) shows as
+    '1.0bn USD' and 999,999.6 (rounds to 1,000,000) shows as '1.0m USD'.
+    """
+    if abs(round(value / 1_000_000, 1)) >= 1_000:
+        return f"{value / 1_000_000_000:.1f}bn {currency}"
+    if abs(round(value)) >= 1_000_000:
+        return f"{value / 1_000_000:.1f}m {currency}"
+    return f"{value:,.0f} {currency}"
 
 
 # --------------------------------------------------------------------------------------
@@ -209,7 +222,7 @@ def _score_single(factor: str, key: str, r: Optional[RatioResult]) -> FactorScor
                    f"{_fmt_points(points)} of {weight} points.")
 
 
-def _score_coverage(ratios: dict[str, RatioResult]) -> FactorScore:
+def _score_coverage(ratios: dict[str, RatioResult], p: FinancialPeriod) -> FactorScore:
     """Interest coverage, with the zero-interest-expense rule."""
     r = ratios.get("interest_coverage")
     zero_interest = (r is not None and r.status == RatioStatus.UNDEFINED
@@ -221,11 +234,13 @@ def _score_coverage(ratios: dict[str, RatioResult]) -> FactorScore:
     used = ["interest_coverage", "net_debt"]
     if nd is not None and nd.status == RatioStatus.VALID and nd.value <= 0:
         return _factor("coverage", float(weight), used,
-                       f"No interest expense reported and net debt is {nd.value:,.0f} "
+                       f"No interest expense reported and net debt is "
+                       f"{fmt_money(nd.value, p.currency)} "
                        f"(net cash position): no debt to service, {weight} of {weight} "
                        "points.")
     if nd is not None and nd.status == RatioStatus.VALID:
-        why = (f"net debt is positive ({nd.value:,.0f}), so zero interest expense is "
+        why = (f"net debt is positive ({fmt_money(nd.value, p.currency)}), so zero "
+               "interest expense is "
                "inconsistent with the debt reported")
     else:
         why = "net debt cannot be calculated, so it is unknown whether there is debt to service"
@@ -248,7 +263,8 @@ def _score_leverage(ratios: dict[str, RatioResult], p: FinancialPeriod) -> Facto
     if equity is not None and equity <= 0:
         kind = "negative" if equity < 0 else "zero"
         return _factor("leverage", 0.0, used,
-                       f"Shareholders' equity is {kind} ({equity:,.0f}): this is a real "
+                       f"Shareholders' equity is {kind} ({fmt_money(equity, p.currency)}): "
+                       "this is a real "
                        f"balance-sheet weakness, not missing data. 0 of {weight} points.")
 
     parts: list[tuple[float, str]] = []   # (fraction, text) of each scored component
@@ -272,11 +288,13 @@ def _score_leverage(ratios: dict[str, RatioResult], p: FinancialPeriod) -> Facto
           and ebitda <= 0 and nd is not None and nd.status == RatioStatus.VALID):
         if nd.value > 0:
             parts.append((0.0, f"net debt / EBITDA scores 0% because EBITDA is not positive "
-                               f"({ebitda:,.0f}) while net debt is positive ({nd.value:,.0f}): "
+                               f"({fmt_money(ebitda, p.currency)}) while net debt is "
+                               f"positive ({fmt_money(nd.value, p.currency)}): "
                                "a real weakness, not missing data"))
         else:
             notes.append(f"Net debt / EBITDA is not used: EBITDA is not positive "
-                         f"({ebitda:,.0f}) but the company has a net cash position.")
+                         f"({fmt_money(ebitda, p.currency)}) but the company has a net "
+                         "cash position.")
     else:
         notes.append(_not_valid_text(nde, "net_debt_to_ebitda"))
 
@@ -300,7 +318,7 @@ def score_factors(ratios: dict[str, RatioResult], p: FinancialPeriod) -> list[Fa
         _score_single("liquidity", "current_ratio", ratios.get("current_ratio")),
         _score_leverage(ratios, p),
         _score_single("profitability", "operating_margin", ratios.get("operating_margin")),
-        _score_coverage(ratios),
+        _score_coverage(ratios, p),
         _score_single("cash_flow", "fcf_margin", ratios.get("fcf_margin")),
     ]
 

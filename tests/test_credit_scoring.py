@@ -129,6 +129,51 @@ def test_band_explanation_wording():
         "Current ratio 1.62x is in the 1.5-2.0x band: 15 of 20 points.")
 
 
+# ======================================================================================
+# fmt_money: compact display text for money amounts (display only)
+# ======================================================================================
+@pytest.mark.parametrize("value, expected", [
+    (1_234_000_000, "1.2bn USD"),     # 1_234_000_000 / 1e9 = 1.234 -> 1.2
+    (-1_200_000_000, "-1.2bn USD"),   # negative billions
+    (1_000_000_000, "1.0bn USD"),     # exactly 1 billion -> bn
+    (999_000_000, "999.0m USD"),      # just below 1 billion -> m
+    (999_960_000, "1.0bn USD"),       # 999.96m rounds to 1,000.0m -> unit chosen after
+                                      # rounding -> bn (not "1000.0m USD")
+    (-999_960_000, "-1.0bn USD"),     # same, negative
+    (999_940_000, "999.9m USD"),      # 999.94m rounds to 999.9m -> stays m
+    (999_999.6, "1.0m USD"),          # rounds to 1,000,000 -> m (not "1,000,000 USD")
+    (999_999.4, "999,999 USD"),       # rounds to 999,999 -> stays plain
+    (-500_000_000, "-500.0m USD"),    # negative millions
+    (1_000_000, "1.0m USD"),          # exactly 1 million -> m
+    (999_999, "999,999 USD"),         # just below 1 million -> plain
+    (-12_345, "-12,345 USD"),         # small negative
+    (0, "0 USD"),
+])
+def test_fmt_money(value, expected):
+    assert cs.fmt_money(value, "USD") == expected
+
+
+def test_fmt_money_uses_given_currency():
+    assert cs.fmt_money(-500_000_000, "EUR") == "-500.0m EUR"
+
+
+def test_explanation_money_uses_period_currency():
+    f = make_incomplete_financials()
+    f.periods[0].currency = "EUR"
+    assert "(-500.0m EUR)" in factor(score(f), "leverage").explanation
+
+
+def test_zero_interest_net_cash_text_in_millions():
+    # SYNTHETIC sample FY2024 with interest 0 and cash 4_000m:
+    # net debt = 400m + 2_800m - 4_000m = -800m -> "-800.0m USD"; coverage still 20 points
+    f = make_sample_financials()
+    f.periods[0].interest_expense = FinancialValue(value=0.0)
+    f.periods[0].cash = FinancialValue(value=4_000_000_000.0)
+    cov = factor(score(f), "coverage")
+    assert cov.points == 20.0
+    assert "net debt is -800.0m USD" in cov.explanation
+
+
 @pytest.mark.parametrize("total, label", [
     (100, "Lower Indicative Financial Risk"), (80, "Lower Indicative Financial Risk"),
     (79.999, "Moderate Indicative Financial Risk"), (60, "Moderate Indicative Financial Risk"),
@@ -224,6 +269,8 @@ class TestIncompleteSample:
         lev = factor(s, "leverage")
         assert lev.points == 0.0
         assert "negative" in lev.explanation and "not missing data" in lev.explanation
+        # -500 x 1_000_000 = -500_000_000 -> compact display "-500.0m USD"
+        assert "Shareholders' equity is negative (-500.0m USD)" in lev.explanation
 
 
 def test_one_missing_factor_blocks_total_no_redistribution():
@@ -274,6 +321,8 @@ def test_negative_ebitda_with_positive_net_debt_scores_zero_component():
     lev = factor(s, "leverage")
     assert lev.points == 9.375
     assert "EBITDA is not positive" in lev.explanation
+    # plain-unit test values -> below 1 million -> "-100 USD" and "1,700 USD"
+    assert "(-100 USD) while net debt is positive (1,700 USD)" in lev.explanation
     assert s.total == 15 + 9.375 + 20 + 20 + 15  # = 79.375
 
 
