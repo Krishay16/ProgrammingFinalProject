@@ -17,8 +17,9 @@ from pydantic import ValidationError
 
 from src import config, state
 from src.data_validation import validate_financials
-from src.manual_input import (blocked_ratios, empty_table, financials_from_json,
-                              financials_to_json, financials_to_table, resize_table,
+from src.manual_input import (blocked_ratios, dot_thousands_cells, empty_table,
+                              financials_from_json, financials_to_json,
+                              financials_to_table, relabel_years, resize_table,
                               table_to_financials, unreadable_cells)
 from src.models import FIELD_GROUPS, FIELD_LABELS, SourceType, Units
 from src.ui.confirm_table import confirm_table
@@ -31,6 +32,8 @@ SECTIONS = [("A. Balance Sheet", "balance_sheet"),
             ("B. Income Statement", "income_statement"),
             ("C. Cash Flow Statement", "cash_flow")]
 BLANK_HINT = "Leave a field blank if you don't know it. Blank is treated as missing, not zero."
+DOT_HINT = ("A number like 1.234 is read as one point two three four. For one thousand two "
+            "hundred and thirty-four, type 1234 or 1,234.")
 SIGN_HINT = ("Enter capital expenditures and interest expense as positive amounts (the size "
              "of the outflow or expense). Losses and net cash outflows are negative, e.g. "
              "(1,234) or -1234.")
@@ -94,11 +97,18 @@ def _settings() -> None:
 def _tables() -> pd.DataFrame:
     ss = st.session_state
     years = _years()
-    if ss[_K + "base_years"] != tuple(str(y) for y in years):
-        _set_base(resize_table(ss[_K + "df"], years))   # keeps values of remaining years
+    wanted = tuple(str(y) for y in years)
+    if ss[_K + "base_years"] != wanted:
+        if len(ss[_K + "base_years"]) == len(wanted):
+            # Latest fiscal year corrected: values keep their column, labels change.
+            _set_base(relabel_years(ss[_K + "df"], years))
+        else:
+            # A year added or removed: values stay with their year.
+            _set_base(resize_table(ss[_K + "df"], years))
     df = ss[_K + "base"]
     st.caption(BLANK_HINT)
     st.caption(SIGN_HINT)
+    st.caption(DOT_HINT)
 
     parts = []
     tag = str(ss[_K + "version"])
@@ -183,6 +193,13 @@ def render() -> None:
     if bad:
         st.warning("These cells could not be read as numbers. Please correct them:\n\n" +
                    "\n".join(f"- {FIELD_LABELS[f]}, FY{y}: '{raw}'" for f, y, raw in bad))
+
+    dots = dot_thousands_cells(df)
+    if dots:
+        st.warning("Please check these values. They are read with a decimal point "
+                   "(1.234 = one point two three four). If you meant thousands, type "
+                   "1234 instead:\n\n" +
+                   "\n".join(f"- {FIELD_LABELS[f]}, FY{y}: '{raw}'" for f, y, raw in dots))
 
     c1, c2, c3 = st.columns(3)
     if c1.button("Validate data", key=_K + "validate", use_container_width=True):
