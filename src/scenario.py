@@ -23,7 +23,7 @@ from src import config
 from src.credit_scoring import compute_credit_score
 from src.financial_calculations import compute_ratios
 from src.models import (FIELD_LABELS, CompanyFinancials, CreditScore, FinancialPeriod, FinancialValue,
-                        Provenance, RatioResult, ValueOrigin)
+                        Provenance, RatioResult, ValueOrigin, VerificationStatus)
 
 SCENARIO_NOTE = "Illustrative stress scenario"
 MIN_CHANGE, MAX_CHANGE = -0.9, 2.0
@@ -38,9 +38,8 @@ BASE_ASSUMPTIONS: list[str] = [
     "expenditures are not adjusted, so the EBIT shock does not flow through to free cash "
     "flow.",
     "Revenue and EBIT are shocked independently. A revenue cut alone (EBIT unchanged) "
-    "mechanically RAISES operating margin and FCF margin (SYNTHETIC example: revenue -10% "
-    "gives 1,350 / 8,100 = 16.7% versus 15.0%), so it is not a realistic downside on its "
-    "own. Use a combined revenue + EBIT shock (e.g. the 'Revenue -10% and EBIT -25%' "
+    "mechanically raises operating margin and FCF margin, so it is not a realistic "
+    "downside on its own. Use a combined revenue + EBIT shock (e.g. the 'Revenue -10% and EBIT -25%' "
     "preset) for a downside view.",
     "A debt change does not change cash (no new borrowing proceeds or repayments are "
     "modelled), and interest expense is changed only by its own slider, not re-derived "
@@ -74,13 +73,19 @@ class ScenarioResult(BaseModel):
 # Helpers
 # --------------------------------------------------------------------------------------
 def _derived(old: FinancialValue, new_value: float, source_type) -> FinancialValue:
-    """New value marked DERIVED with the scenario note; provenance is copied, not shared."""
+    """New value marked DERIVED with the scenario note; provenance is copied, not shared.
+
+    A stressed number is never a matched source fact: it is UNVERIFIED and carries no
+    original filing text. source_type / source_ref / location / tag are kept for tracing.
+    """
     if old.provenance is not None:
         prov = old.provenance.model_copy(
-            update={"origin": ValueOrigin.DERIVED, "note": SCENARIO_NOTE})
+            update={"origin": ValueOrigin.DERIVED, "note": SCENARIO_NOTE,
+                    "verification": VerificationStatus.UNVERIFIED, "original_text": None})
     else:
         prov = Provenance(source_type=source_type, source_ref=SCENARIO_NOTE,
-                          origin=ValueOrigin.DERIVED, note=SCENARIO_NOTE)
+                          origin=ValueOrigin.DERIVED, note=SCENARIO_NOTE,
+                          verification=VerificationStatus.UNVERIFIED)
     return FinancialValue(value=new_value, provenance=prov)
 
 

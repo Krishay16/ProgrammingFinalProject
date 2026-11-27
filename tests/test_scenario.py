@@ -19,7 +19,8 @@ import pytest
 from pydantic import ValidationError
 
 from src import config
-from src.models import CompanyFinancials, RatioStatus, ValueOrigin
+from src.models import (CompanyFinancials, FinancialValue, Provenance, RatioStatus, SourceType,
+                        ValueOrigin, VerificationStatus)
 from src.scenario import SCENARIO_NOTE, ScenarioInputs, run_scenario
 from tests.fixtures.sample_data import make_incomplete_financials, make_sample_financials
 
@@ -162,7 +163,8 @@ def test_revenue_cut_alone_raises_margins():
     assert r.stressed["fcf_margin"].value > r.base["fcf_margin"].value
     assert r.stressed["revenue_growth"].value == approx(8_100 / 8_400 - 1)
     assert r.stressed_score.total == approx(91.875)
-    assert any("shocked independently" in a and "16.7%" in a for a in r.assumptions)
+    assert any("shocked independently" in a and "raises operating margin" in a
+               for a in r.assumptions)
 
 
 # --------------------------------------------------------------------------------------
@@ -220,8 +222,41 @@ def test_changed_values_are_derived_with_note_unchanged_values_are_not():
         prov = getattr(p, field).provenance
         assert prov.origin == ValueOrigin.DERIVED, field
         assert prov.note == SCENARIO_NOTE, field
+        assert prov.verification == VerificationStatus.UNVERIFIED, field
+        assert prov.original_text is None, field
     for field in ("revenue", "interest_expense", "cash", "total_equity"):
         assert getattr(p, field).provenance.origin == ValueOrigin.REPORTED, field
+
+
+def test_stressed_value_provenance_is_derived_unverified():
+    """SYNTHETIC EBIT with SEC-style provenance; EBIT -20%: 1,350 -> 1,080.
+    The stressed copy must not claim to be a matched source fact; the input is untouched."""
+    f = make_sample_financials().model_copy(deep=True)
+    f.periods[0].ebit = FinancialValue(
+        value=1_350 * M,
+        provenance=Provenance(source_type=SourceType.SEC_EDGAR, source_ref="SYNTHETIC ref",
+                              location="SYNTHETIC 10-K", tag="OperatingIncomeLoss",
+                              verification=VerificationStatus.SOURCE_STRUCTURED,
+                              original_text="1,350"))
+    r = run_scenario(f, ScenarioInputs(ebit_change_pct=-0.20))
+
+    stressed = r.stressed_period.ebit
+    assert stressed.value == approx(1_080 * M)
+    prov = stressed.provenance
+    assert prov.origin == ValueOrigin.DERIVED
+    assert prov.verification == VerificationStatus.UNVERIFIED
+    assert prov.original_text is None
+    assert prov.note == SCENARIO_NOTE
+    assert prov.source_type == SourceType.SEC_EDGAR      # traceability kept
+    assert prov.source_ref == "SYNTHETIC ref"
+    assert prov.location == "SYNTHETIC 10-K"
+    assert prov.tag == "OperatingIncomeLoss"
+
+    orig = f.periods[0].ebit.provenance
+    assert orig.verification == VerificationStatus.SOURCE_STRUCTURED
+    assert orig.original_text == "1,350"
+    assert orig.origin == ValueOrigin.REPORTED
+    assert f.periods[0].ebit.value == 1_350 * M
 
 
 def test_ebitda_not_reported_is_left_missing_and_derived_by_engine():
