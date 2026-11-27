@@ -1,6 +1,8 @@
 # Data sources
 
-Owner: Person 2 (Public data). Code: `src/sec_client.py`.
+Owner: Person 2 (Public data). Code: `src/sec_client.py` (HTTP client),
+`src/company_search.py` (name/ticker search), `src/financial_normalizer.py` (SEC data ->
+shared data model).
 
 ## Summary
 
@@ -65,8 +67,140 @@ EDGAR covers companies that file with the U.S. SEC. Many non-U.S. companies, pri
 companies, and companies that do not file XBRL financial data will **not** be found or
 will have incomplete data. For those, the app offers PDF upload or manual entry.
 
+## Company search (`src/company_search.py`)
+
+`search_companies(query, client=None, limit=10)` searches the SEC ticker list. That file has
+one row per **ticker**, so a company with several share classes appears several times.
+
+* **Normalization (query and SEC names alike):** case-insensitive; accents removed;
+  apostrophes deleted ("McDonald's" = "mcdonalds"); SEC state tags such as `/DE/` removed;
+  other punctuation becomes a space ("Coca-Cola" = "coca cola"); a leading "The" and trailing
+  legal suffixes (Inc, Incorporated, Corp, Corporation, Co, Company, Ltd, Limited, PLC,
+  Holdings, Holding, LLC) are ignored.
+* **Tickers:** case-insensitive, `.` and `-` are equal (BRK.B = BRK-B).
+* **Ranking tiers** (fixed scores, used for ranking only):
+
+  | Tier | Rule | Score |
+  |---|---|---|
+  | 1 | exact ticker | 1.0 |
+  | 2 | exact normalized name (also ignoring spaces: "cocacola") | 0.95 |
+  | 3 | name starts with the query | 0.85 |
+  | 4 | query appears as whole word(s) in the name | 0.7 |
+  | 5 | fuzzy (difflib similarity >= 0.8), only if tiers 1-4 found fewer than `limit` companies | similarity x 0.6 |
+
+  Queries shorter than 2 characters only use tiers 1-2. Within a tier: shorter name first,
+  then alphabetical, then SEC file order.
+* **One result per company:** results are de-duplicated by CIK, keeping the best-ranked
+  row (for share classes, the first-listed ticker). CIKs are 10-digit zero-padded.
+* An empty query, or one that is empty after removing punctuation and suffixes ("Inc",
+  "The"), returns no results without calling the SEC.
+* **SEC errors are not hidden.** If the ticker list cannot be fetched (SEC unavailable, rate
+  limited, missing contact email), the error is raised so the app can say "the SEC is
+  unavailable" rather than wrongly saying "no company found".
+
+## Selection policy (`src/financial_normalizer.py`)
+
+`normalize_company_facts(facts, company, max_periods=3)` turns the SEC "company facts" JSON
+into our shared `CompanyFinancials` model. These rules decide **which numbers we take**.
+
+1. **US GAAP only.** We read the `us-gaap` section. If it is absent (for example IFRS / 20-F
+   filers, which use `ifrs-full`) or empty, the result has no periods and a warning that
+   suggests PDF upload or manual entry. Ordinary data problems never crash the app.
+2. **Annual reports only.** A fact is used only if its form is `10-K` or `10-K/A` and its
+   `fp` is `FY`. Quarterly reports (10-Q), proxy statements (DEF 14A), 8-Ks etc. are ignored.
+3. **Periods are identified by their end date, not by `fy`.** In company facts, `fy` is the
+   fiscal year of the *filing*, and each 10-K repeats earlier years. So a FY2024 number
+   repeated in the FY2026 10-K is correctly filed under the period ending in 2024.
+4. **Income-statement and cash-flow items must cover about one year:** 350 to 380 days from
+   `start` to `end`. This accepts 52/53-week years (e.g. 364 or 371 days) and rejects
+   quarters, even if a quarter is (wrongly or unusually) tagged `fp = FY`.
+5. **Balance-sheet items** are point-in-time values taken **only at exactly** a fiscal year
+   end date found in step 6.
+6. **Fiscal year ends come from the data.** Candidate year ends are the end dates of one-year
+   annual facts for net income, revenue, operating income and operating cash flow.
+   Microsoft's year ends on 30 June; we never assume 31 December.
+   `fiscal_year` = the calendar year in which the period ends.
+7. **Core items:** a year end is used only if **net income** (one-year) **and total assets**
+   (at that exact date) are both reported. Revenue may be missing. We take the latest
+   `max_periods` (3) qualifying year ends, newest first.
+8. **Two year ends in the same calendar year** (change of fiscal year end, or a 52/53-week year
+   ending on 1-2 January): we keep the later one and add a warning.
+9. **Duplicates** (same tag, same end date): the **most recently filed** value wins, so
+   amendments (10-K/A) and restatements in later 10-Ks replace older figures. If two facts
+   were filed on the same day, the higher accession number wins.
+10. **Which tag per field.** Each field has an ordered list of candidate tags (below). For
+    each field we first look for the highest-priority tag that has a value in **all** selected
+    years, and use it for every year, so the series is consistent. Only if no single tag covers
+    all years does each year use its own first available tag; then a warning lists the tag
+    used per year, because definitions may differ.
+11. **Currency:** we read currency units only (e.g. `USD`), never per-share units. A period is
+    in USD when its net income is reported in USD, otherwise in the single other currency
+    found. A number that exists only in a different currency is left blank with a warning:
+    we never mix currencies in one period and never convert.
+12. **Signs:** capital expenditure and interest expense are stored as positive amounts. If the
+    SEC value was negative, the value's note says the sign was flipped. Everything else keeps
+    its reported sign (losses negative; investing/financing cash flows keep their sign).
+13. **Missing means blank.** A tag that is not reported gives an empty value (`None`), never 0,
+    and a warning lists the missing fields for each year. **EBITDA is always left blank here**;
+    the analysis engine derives it from EBIT + D&A.
+14. **Traceability (provenance)** on every value: source "SEC EDGAR", the company facts URL with
+    the 10-digit CIK, the filing (`10-K accn 0001193125-26-323660`), the filing date, the tag
+    used and the raw reported number. Status is "source structured". Values we calculate
+    ourselves are marked **derived** and their note lists the component tags and filings.
+15. **Period filing date and form** are those of the net income fact chosen for that year,
+    i.e. the **most recent filing that reported the period**. For an older year this is often
+    a later 10-K that repeats it as a comparative (e.g. Microsoft FY2024 shows the 10-K filed
+    in July 2026), because that is where the latest (possibly restated) figure comes from.
+16. **Units:** XBRL values are already in full currency units, so `original_units = UNITS`.
+
+### Candidate tags per field
+
+| Field | Candidates, in priority order |
+|---|---|
+| Revenue | `Revenues`, `RevenueFromContractWithCustomerExcludingAssessedTax`, `SalesRevenueNet` |
+| Cost of revenue | `CostOfRevenue`, `CostOfGoodsAndServicesSold` |
+| Gross profit | `GrossProfit` |
+| EBIT | `OperatingIncomeLoss` |
+| Interest expense (stored positive) | `InterestExpense`, `InterestExpenseNonoperating`, `InterestExpenseDebt` |
+| Net income | `NetIncomeLoss` |
+| D&A | `DepreciationDepletionAndAmortization`, `DepreciationAndAmortization`, `DepreciationAmortizationAndAccretionNet` |
+| Cash | `CashAndCashEquivalentsAtCarryingValue`; fallback `CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents` (note: includes restricted cash) |
+| Current assets / Total assets / Current liabilities | `AssetsCurrent` / `Assets` / `LiabilitiesCurrent` |
+| Total liabilities | `Liabilities`; else **derived** `LiabilitiesAndStockholdersEquity` minus equity including non-controlling interest (or, if that is not reported, minus `StockholdersEquity`, with a note that the result may include non-controlling interest) |
+| Total equity | `StockholdersEquity`, `StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest` |
+| Short-term debt | `DebtCurrent`; else **derived** sum of whichever of `LongTermDebtCurrent`, `CommercialPaper`, `ShortTermBorrowings` are reported (blank if none). If `DebtCurrent` exists, components are never added (no double counting). Leases and accounts payable are never included. |
+| Long-term debt | `LongTermDebtNoncurrent`; else **derived** `LongTermDebt` minus `LongTermDebtCurrent`, only if both are reported |
+| Operating / investing / financing cash flow | `NetCashProvidedByUsedInOperatingActivities` / `...InvestingActivities` / `...FinancingActivities` |
+| Capex (stored positive) | `PaymentsToAcquirePropertyPlantAndEquipment` |
+| EBITDA | not taken from the SEC (derived by the engine) |
+
+### Known limitations
+
+* **D&A is not available for some filers, e.g. Microsoft, so EBITDA-based ratios
+  (EBITDA, net debt / EBITDA) are unavailable for them.** Microsoft reports none of our three
+  D&A tags. It does report `Depreciation`, but we deliberately do not use it as D&A:
+  depreciation alone would leave out amortization and understate EBITDA.
+* Only the tags listed above are read. A company that uses another (e.g. company-specific)
+  tag for a line item will show that field as missing; the analyst can complete it manually.
+* Derived values (short-term debt from components, long-term debt, total liabilities) depend
+  on what the company tags; the note on each value says exactly what was added or subtracted.
+* Interest-expense tags are not perfectly uniform across companies (e.g. total interest
+  expense vs non-operating interest expense); the tag used is shown on every value.
+
 ## Testing
 
 `tests/test_sec_client.py` runs fully offline with a fake HTTP session and a fake clock. One
 optional live test (`@pytest.mark.live`) calls the real ticker endpoint. It is skipped by
 default; run it with `pytest -m live`, which needs `SEC_CONTACT_EMAIL` set.
+
+`tests/test_company_search.py` and `tests/test_data_normalization.py` run offline on fixtures
+in `tests/fixtures/sec/`:
+
+| Fixture | Content |
+|---|---|
+| `company_tickers_sample.json` | **Real** rows from the SEC ticker list (Apple, Microsoft, Tesla, Amazon, Coca-Cola and similarly named Coca-Cola companies, Alphabet and Berkshire Hathaway share classes, Apple Hospitality REIT), copied unchanged. |
+| `microsoft_companyfacts_trimmed_fixture.json` | **Real** Microsoft company facts, trimmed: only the tags we read, facts ending on/after 2023-06-30, and non-10-K rows only for a few core tags. Values unchanged. |
+| `SYNTHETIC_*_trimmed_fixture.json` | **Invented** values for edge cases: duplicates and amendments, quarterly noise, tag switches, debt fallbacks and signs, fiscal-year collision and 53-week years, non-USD filer. |
+
+The real fixtures are rebuilt with `scripts/build_sec_fixtures.py` (not run by pytest). It
+reads `data/cache/` and makes at most one live call (the ticker list) if it is not cached.
