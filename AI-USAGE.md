@@ -10,11 +10,121 @@ The team uses a shared data contract, one branch and pull request per prompt, fi
 * Prompting, verification and an observed AI error or correction: TODO by Person 1.
 * Personal checks and GitHub contribution: TODO by Person 1.
 
-## Person 2: Name to complete
+## Person 2: Asgeir (Public Data and PR Reviews)
 
-* Tools and purpose: TODO by Person 2.
-* Prompting, verification and an observed AI error or correction: TODO by Person 2.
-* Personal checks and GitHub contribution: TODO by Person 2.
+### Tools used
+
+- **Claude Code:** Used within the repository to write code, tests and documentation for prompts 2.1–2.4, and to execute automated tests.
+- **Claude (chat):** Used separately to:
+  - Review each prompt and identify gaps before implementation.
+  - Review Claude Code's plans and development reports.
+  - Assist with reviewing Person 4's pull requests (#6, #8 and #10).
+  - Format manually collected reconciliation figures into CSV rows.
+
+### How the AI was used
+
+For each prompt, Claude Code first produced an implementation plan. Asgeir reviewed the plan with assistance from Claude chat and requested changes before any code was written.
+
+After implementation, Asgeir independently ran the tests, checked results against real financial sources, created commits and opened pull requests himself.
+
+### Corrections required before implementation
+
+#### 2.1 SEC Client
+
+- An empty company facts response must be classified as "no data" rather than "malformed".
+- HTTP 404 error messages must not incorrectly claim that the company does not exist.
+- Rate limiting must be shared across all clients because Streamlit creates new instances on each rerun.
+- Required HTTP headers must be included in every request.
+- The contact email must be validated for the presence of an "@" character.
+
+#### 2.2 Financial Data Normalizer
+
+- A consistent XBRL tag must be used for each financial field across reporting years. Otherwise, Microsoft's interest expense would have switched tags between FY2024 and FY2025.
+- Microsoft's depreciation and amortisation (D&A) must remain empty rather than being populated using depreciation alone, which would underestimate EBITDA.
+- A committed script must generate the real financial fixtures to demonstrate that the figures were not manually fabricated.
+
+#### 2.3 Company Search Page
+
+- SEC service outages must be explicitly reported as outages rather than incorrectly displaying "company not found".
+- Company confirmation is required even when only one search result is returned.
+- Previous results must be cleared when a new search is initiated.
+- The Analyze action must validate the CIK first.
+- Unexpected errors must be logged in full.
+
+#### 2.4 Financial Reconciliation
+
+- Reuse Person 3's parse_number function and Person 1's Units model rather than introducing a separate parser.
+- Never overwrite manually entered financial figures.
+- Never invent explanations for discrepancies between financial sources.
+
+### Personal verification by Asgeir
+
+#### Automated testing
+
+Asgeir independently ran pytest on every development branch.
+
+| Development stage | Tests passed |
+|---|---:|
+| 2.1 SEC Client | 246 |
+| 2.2 Financial Data Normalizer | 349 |
+| 2.3 Company Search Page | 440 |
+| 2.4 Financial Reconciliation | 499 |
+
+#### Live SEC verification
+
+- Live SEC tests passed.
+- Microsoft's company facts were successfully retrieved from the SEC and subsequently served from the cache.
+- Normalized Microsoft financial figures for FY2024–FY2026 were checked against Microsoft's official 10-K filings. All checked figures matched.
+
+#### Application verification
+
+Asgeir manually tested the Search page in a web browser, including a simulated connectivity outage by disabling Wi-Fi.
+
+#### Financial reconciliation
+
+Asgeir independently read 20 financial figures from the official Microsoft and Apple 10-K filings, covering FY2026 and one FY2025 comparative figure for each company.
+
+- Figures checked: 20.
+- Matching figures: 20.
+- Reconciliation success rate: 100% (20/20).
+- No AI-generated financial numbers were used.
+
+Claude chat was used only to format the manually collected figures into CSV rows.
+
+### AI mistakes and how they were caught
+
+1. **Incomplete implementation plans:** Claude Code's initial plans contained the gaps described in tasks 2.1–2.4. These were identified and corrected during human plan review before implementation.
+
+2. **Incorrect Python environment:** The initial virtual environment used Python 3.9, resulting in pip installing older library versions. Claude Code's development report revealed the issue. Asgeir rebuilt the virtual environment using Python 3.12.4.
+
+3. **Incorrect Python version assumption:** Claude chat incorrectly inferred that Python 3.13 was being used based on warning messages. Claude Code's report confirmed Python 3.12.4, and Asgeir corrected the affected pull request descriptions.
+
+4. **Incorrect SEC company name prediction:** Claude chat predicted Microsoft's registered SEC name as "MICROSOFT CORPORATION". The live SEC request returned "MICROSOFT CORP".
+
+5. **Incorrect identification of a financial engine bug:** During the review of Person 4's pull requests, Claude chat initially classified the zero-debt and missing-interest behaviour as a bug. After checking Person 4's original prompts, Asgeir established that the implementation followed the specification. The issue was therefore raised as a team discussion point rather than reported as a confirmed bug.
+
+6. **Misleading interface labels and duplicated warnings:** During its live run for task 2.3, Claude Code identified and corrected a misleading "filing date" column label and a duplicated financial-institution warning.
+
+### Human error caught by AI
+
+During manual financial reconciliation, Asgeir accidentally supplied Apple's FY2025 revenue for a row requiring FY2025 net income.
+
+Claude chat detected the mismatch before the figure was entered into the reconciliation file.
+
+This demonstrates the use of AI as an additional verification mechanism, rather than as a source of financial figures.
+
+### Limitations and unresolved issues
+
+- **Apple interest expense:** Apple's SEC data does not contain interest expense under the current data extraction approach. Consequently, Apple's credit score is classified as "Insufficient Data" under the current scoring rules. This issue was raised with Persons 4 and 1.
+- **SEC rate-limit detection:** HTTP 403 rate-limit detection was tested using example response wording rather than a captured real SEC blocking response.
+
+These limitations were explicitly reported rather than hidden or resolved using invented financial data.
+
+### Human oversight and responsibility
+
+Asgeir reviewed AI-generated plans before implementation, independently executed tests, checked financial figures against official SEC filings, reviewed teammates' pull requests, and personally created commits and opened pull requests.
+
+The information in this section was supplied by Asgeir and consolidated into AI-USAGE.md by Samy.
 
 ## Person 3: Name to complete
 
