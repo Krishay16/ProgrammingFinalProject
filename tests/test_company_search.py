@@ -238,3 +238,17 @@ def test_missing_contact_email_propagates_config_error(monkeypatch):
     monkeypatch.setattr(config, "SEC_CONTACT_EMAIL", None)
     with pytest.raises(SecConfigError):
         search_companies("Apple")
+
+
+# --------------------------------------------------------------------------- no match vs outage (P2 2.3)
+
+def test_made_up_name_returns_empty_list_not_error(client):
+    assert search_companies("Zzyzx Qwertplonk Industries", client=client) == []
+    assert client.calls == 1
+
+
+@pytest.mark.parametrize("error", [SecUnavailableError(), SecRateLimitError()])
+def test_outage_is_distinguishable_from_no_match(error):
+    """An outage must raise (so the UI shows an outage), never return [] ("not found")."""
+    with pytest.raises(SecClientError):
+        search_companies("Zzyzx Qwertplonk Industries", client=FakeClient(error=error))
