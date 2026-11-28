@@ -109,7 +109,8 @@ def build_html_report(a: AnalysisResult, c: CreditCommentary) -> str:
     out.append("</section><section><h2>Credit risk alerts</h2>")
     out.append(_list([
         f"FY {alert.fiscal_year} · {alert.severity.value.title()} · {alert.title} · "
-        f"{alert.interpretation} · Threshold: {alert.threshold} · "
+                f"{alert.interpretation} · Threshold: {alert.threshold} · "
+        f"Measured value: {alert.measured_value if alert.measured_value is not None else 'n/a'} · "
         f"Source: {alert.source_reference or 'n/a'}"
         for alert in a.alerts
     ], "No screening alerts were triggered by the configured rules."))
@@ -131,8 +132,8 @@ def build_html_report(a: AnalysisResult, c: CreditCommentary) -> str:
     out.append("</section><section><h2>Methodology and limitations</h2>")
     out.append(_paragraph("Ratios and screening scores are taken from the deterministic analysis engine. "
                           "The report uses confirmed inputs and preserves unavailable values."))
-    if methodology := methodology_text():
-        out.append(f"<details open><summary>Scoring methodology documentation</summary><pre>{_text(methodology)}</pre></details>")
+    if methodology_text():
+        out.append(_paragraph("For the full scoring methodology, ratio definitions, thresholds and assumptions, see the Methodology page in SolvIQ."))
     else:
         out.append(_paragraph("The scoring methodology document has not been supplied in this build."))
     out.extend((_paragraph(config.SCORE_DISCLAIMER), "</section></body></html>"))
