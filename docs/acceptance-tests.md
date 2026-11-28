@@ -76,7 +76,7 @@ the methodology. If a definition is different, the hand working must be redone, 
 | Net debt to EBITDA | (total debt − cash) ÷ EBITDA | (3,200 − 1,500) ÷ 1,800 | 0.94x |
 | Operating margin | EBIT ÷ revenue | 1,350 ÷ 9,000 | 15.0% |
 | Interest coverage | EBIT ÷ interest expense | 1,350 ÷ 150 | 9.0x |
-| Gross margin | gross profit ÷ revenue | 3,150 ÷ 9,000 | 35.0% |
+| Return on assets | net income ÷ total assets (end of year) | 900 ÷ 12,000 | 7.5% |
 | Net margin | net income ÷ revenue | 900 ÷ 9,000 | 10.0% |
 | Free cash flow | operating cash flow − capex | 1,500 − 600 | 900 |
 
@@ -86,25 +86,27 @@ would move it to the next band, so this is worth an automated test.
 | ID | Steps | Expected result | Type | Status |
 |---|---|---|---|---|
 | A5.1 | Load the demo company and open **Dashboard**. | The ratios match the table above (to two decimals). | Automated + Manual | Blocked |
-| A5.2 | Load the demo company. | A score from 0 to 100 with one of the four risk bands ("Lower / Moderate / Elevated / High Indicative Financial Risk"). | Automated + Manual | Blocked |
-| A5.3 | Analyse the SYNTHETIC incomplete company (interest expense and cash flow missing). | No total score and no partial score (two factors cannot be scored). The label "Insufficient Data — Full Credit Score Unavailable" with an explanation. Weights are not redistributed. | Automated | Blocked |
-| A5.6 | Demo company FY2024 with short-term and long-term debt set to 0 and interest expense removed (zero-debt case). | Coverage gets full points (20 of 20) with "No reported debt, so no interest burden." A full total score and risk band are shown, not "Insufficient Data". Hand working below. | Automated | Blocked |
-| A5.7 | Demo company FY2024 with only interest expense removed (debt unchanged; the Apple case). | Coverage is "not scorable", never treated as 0 interest. "Partial score: 71.875 of 80 available points" (display may round). `total` is empty and no risk band is shown. Hand working below. | Automated | Blocked |
+| A5.2 | Load the demo company. | Score 91.875 of 100 (display may round), "Lower Indicative Financial Risk". Hand working below. | Automated + Manual | Blocked |
+| A5.3 | Analyse the SYNTHETIC incomplete company (interest expense and cash flow missing). | No total score and no risk band. The label "Insufficient Data — Full Credit Score Unavailable" with an explanation of the factors that could not be scored. Weights are not redistributed. | Automated | Blocked |
 | A5.4 | Analyse the SYNTHETIC incomplete company (negative equity). | Leverage factor scores 0 and a risk alert about negative equity appears. | Automated | Blocked |
-| A5.5 | On **Stress Scenario**, lower revenue by 20% and run. | Base and stressed results side by side, labelled "Illustrative Stress Scenario — Not Reported Financials". The original figures are unchanged. | Manual | Blocked |
+| A5.5 | On **Stress Scenario**, click the **EBIT -20%** preset and run. | Base and stressed results side by side, labelled "Illustrative Stress Scenario — Not Reported Financials". Base score 91.875 (Lower), stressed score 78.75 (Moderate). The original figures are unchanged. Hand working below. | Manual | Blocked |
+| A5.6 | Demo company FY2024 with only interest expense removed (debt unchanged; the Apple case). | Coverage cannot be scored and is never treated as 0 interest. No total score and no risk band: "Insufficient Data — Full Credit Score Unavailable", saying 1 of 5 factors could not be scored. | Automated | Blocked |
 
-Hand working for A5.6 and A5.7 (rule: `docs/architecture.md`, "Coverage with missing interest expense"). Bands and
-weights are the ones written in `SCORING_CONFIG` on Person 4's `p4/score-alerts` branch. **Person 4: if those
-thresholds change, redo this working by hand.**
+Hand working for A5.2 and A5.5. Bands and weights are the ones in `SCORING_CONFIG` (`src/credit_scoring.py`).
+The EBIT shock moves EBITDA by the same amount and does not change free cash flow. **Person 4: if those thresholds
+or the scenario rules change, redo this working by hand.**
 
-| Factor (weight) | A5.7: interest expense missing | A5.6: zero debt, interest missing |
+| Factor (weight) | A5.2: base | A5.5: EBIT −20% (EBIT 1,080, EBITDA 1,530) |
 |---|---|---|
-| Liquidity (20) | current ratio 1.85x → band ≥ 1.5x = 75% → 15 | same → 15 |
-| Leverage (25) | D/E 0.59x → ≤ 1.0x = 75%; net debt/EBITDA 0.94x → ≤ 1.0x = 100%; average 87.5% → 21.875 | D/E 0 → 100%; net debt (0 − 1,500) ÷ 1,800 = −0.83x → 100% → 25 |
-| Profitability (20) | operating margin 15.0% → ≥ 15% = 100% → 20 | same → 20 |
-| Coverage (20) | not scorable (debt 3,200 > 0, interest missing) | no debt → full → 20 |
-| Cash flow (15) | FCF margin 900 ÷ 9,000 = 10.0% → ≥ 10% = 100% → 15 | same → 15 |
-| **Result** | **partial 71.875 of 80, no total, no band** | **total 95 of 100** |
+| Liquidity (20) | current ratio 1.85x → ≥ 1.5x = 75% → 15 | unchanged → 15 |
+| Leverage (25) | D/E 0.59x → ≤ 1.0x = 75%; net debt/EBITDA 0.94x → ≤ 1.0x = 100%; average 87.5% → 21.875 | D/E 0.59x → 75%; net debt/EBITDA 1,700 ÷ 1,530 = 1.11x → ≤ 2.0x = 75%; average 75% → 18.75 |
+| Profitability (20) | operating margin 15.0% → ≥ 15% = 100% → 20 | 1,080 ÷ 9,000 = 12.0% → ≥ 8% = 75% → 15 |
+| Coverage (20) | interest coverage 9.0x → ≥ 8x = 100% → 20 | 1,080 ÷ 150 = 7.2x → ≥ 4x = 75% → 15 |
+| Cash flow (15) | FCF margin 900 ÷ 9,000 = 10.0% → ≥ 10% = 100% → 15 | unchanged → 15 |
+| **Total** | **91.875 → Lower (≥ 80)** | **78.75 → Moderate (60 to 80)** |
+
+The zero-debt rule and the partial score are future work (see `docs/architecture.md`, "Next steps / future work").
+They are not acceptance tests for the MVP.
 
 ## 6. Dashboard, commentary and report (Person 5)
 

@@ -39,24 +39,35 @@ Pages never call each other directly. They share data only through `src/state.py
 - Money is stored in full currency units; currencies are never converted.
 - Each figure carries `Provenance` (source, location, original text, tag, verification status).
 - If data is insufficient the score is `None` with an explanation; weights are never redistributed.
-- **Coverage with missing interest expense** (decision 2026-11-27, see below):
-  - *Zero debt is not missing data.* If short-term and long-term debt are both reported (not `None`) and sum to 0,
-    and interest expense is missing or 0, coverage gets full points with the explanation "No reported debt, so no
-    interest burden."
-  - *Missing interest with debt is not zero interest.* If debt is above 0 (or missing) and interest expense is
-    missing, coverage is "not scorable" (`points = None`). It is never treated as 0 interest.
-  - *Partial score.* When coverage is the only factor that cannot be scored, the four other factors are still shown
-    as "Partial score: X of 80 available points". `total` stays `None` and no risk band is given. The 80 points are
-    never scaled up to 100.
-  - Two or more factors not scorable → "Insufficient Data — Full Credit Score Unavailable", as before.
-  - The SEC normalizer first tries alternative interest tags (and cash paid for interest) before giving up.
+- **Coverage and interest expense** (current behaviour of `src/credit_scoring.py`):
+  - If interest expense is reported as 0 and net debt ≤ 0, coverage gets full points (no debt to service).
+  - If interest expense is missing, coverage cannot be scored. It is never treated as 0 interest. Because one
+    factor is missing, there is no total and no risk band, and the result is "Insufficient Data — Full Credit
+    Score Unavailable".
+- Tests run offline; live-network tests are marked `live` and skipped by default.
 
 ## Decision log
 
 | Date | Decision | Why | Who changes what |
 |---|---|---|---|
-| 2026-11-27 | Coverage rule above: zero debt scores full coverage; missing interest expense makes coverage "not scorable" with a partial score out of 80 and no band; no weight redistribution. | Real SEC data: Apple has no interest expense tag, so its whole score was "Insufficient Data"; the zero-debt case was wrongly blocked too. | P1: this doc and acceptance tests A5.3, A5.6, A5.7. P4: `credit_scoring.py` (and dashboard text with P5). P2: fallback interest tags in `financial_normalizer.py`. |
-- Tests run offline; live-network tests are marked `live` and skipped by default.
+| 2026-11-28 | Keep the current coverage rule for the MVP. The zero-debt rule and the partial score move to "Next steps / future work". | Exams and the Monday deadline. The demo company (MSFT) reports interest expense, so the demo is not affected. | P1: this doc and `docs/acceptance-tests.md`. No code change. |
+
+## Next steps / future work
+
+Agreed with Person 4 but not built for the MVP:
+
+- **Zero debt is not missing data.** If short-term and long-term debt are both reported and sum to 0 (interest
+  missing or 0), coverage gets full points with the message "No reported debt, so no interest burden." This is
+  checked before the zero-interest rule above.
+- **Missing interest with debt stays not scorable.** If interest expense is missing and debt is above 0 or unknown,
+  coverage cannot be scored (as now).
+- **Partial score.** If exactly one factor cannot be scored, the total stays `None` and no risk band is given. The
+  explanation starts "Partial score: X of Y available points". X is the sum of the points from the factors that
+  could be scored, and Y is their combined maximum (100 minus the missing factor's weight, so 80 when coverage is
+  missing). Weights are never redistributed. Two or more unscored factors still give "Insufficient Data — Full
+  Credit Score Unavailable".
+- Why it matters: some companies on SEC data (for example Apple) have no interest expense tag, so today they get no
+  score at all.
 
 ## Module ownership
 
