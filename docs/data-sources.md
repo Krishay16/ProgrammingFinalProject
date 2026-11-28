@@ -207,6 +207,41 @@ into our shared `CompanyFinancials` model. These rules decide **which numbers we
 * Interest-expense tags are not perfectly uniform across companies (e.g. total interest
   expense vs non-operating interest expense); the tag used is shown on every value.
 
+## Public data flow (`src/public_data.py`)
+
+`fetch_public_financials(match)` runs after the analyst has confirmed a company. It calls
+`get_submissions` (official name, tickers, SIC code, SIC description), then
+`get_company_facts` and the normalizer. It never raises; every outcome becomes a status:
+
+| Outcome | Status |
+|---|---|
+| invalid CIK (`ValueError` from `pad_cik`) | `API_UNAVAILABLE` |
+| `SecConfigError` (no `SEC_CONTACT_EMAIL`), at any step | `API_UNAVAILABLE` (message: set `SEC_CONTACT_EMAIL`) |
+| submissions: `SecNotFoundError` | `COMPANY_NOT_FOUND` |
+| any step: `SecRateLimitError` | `RATE_LIMITED` |
+| any step: `SecUnavailableError`, `SecMalformedResponseError`, other `SecClientError` | `API_UNAVAILABLE` |
+| facts: `SecNotFoundError`, no `us-gaap`, or the normalizer finds no periods | `NO_FINANCIAL_STATEMENTS` |
+| latest period lacks revenue, total assets or current liabilities | `INSUFFICIENT_DATA` (data still returned) |
+| unexpected non-SEC exception (a bug; logged with traceback) | `API_UNAVAILABLE` |
+| otherwise | `AVAILABLE` |
+
+An outage or rate limit is never reported as "no financial statements": the message says it is
+a connection problem, not proof that statements do not exist. Messages are fixed texts;
+exception text is never copied into them.
+
+* **Financial institutions:** SIC 6000-6799 inclusive sets
+  `CompanyInfo.is_financial_institution = True` and puts `FINANCIAL_INSTITUTION_MESSAGE` first in
+  `warnings`. A missing or non-numeric SIC means "not a financial institution".
+* **Company fields:** `country` is always left empty. The submissions address field mixes US
+  states and countries, so we do not guess. `reporting_framework` is "US GAAP" only when
+  us-gaap periods were used.
+* **Caching:** the Search page caches *search results* for 1 hour (`st.cache_data`). It does
+  NOT cache `fetch_public_financials` results, so an outage is never remembered. The SEC disk
+  cache (24 h) already makes repeat fetches fast.
+* **Filing date shown per period:** the filing date of the most recent 10-K that reported that
+  period (normalizer rule 13). Older years therefore show the latest 10-K's date, not their
+  original filing date. The Search page labels the column accordingly.
+
 ## Testing
 
 `tests/test_sec_client.py` runs fully offline with a fake HTTP session and a fake clock. One
@@ -224,3 +259,8 @@ in `tests/fixtures/sec/`:
 
 The real fixtures are rebuilt with `scripts/build_sec_fixtures.py` (not run by pytest). It
 reads `data/cache/` and makes at most one live call (the ticker list) if it is not cached.
+
+`tests/test_public_data.py` (fake client; MSFT fixture plus SYNTHETIC submissions) covers every
+`DataAvailability` branch, SIC edge values and "outage is never NO_FINANCIAL_STATEMENTS".
+`tests/test_search_page.py` drives the Search page headlessly with Streamlit `AppTest`, with
+`search_companies` and `fetch_public_financials` monkeypatched (no network).
