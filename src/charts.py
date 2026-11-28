@@ -113,7 +113,7 @@ def score_gauge(score: CreditScore) -> go.Figure:
         for lower, upper, color in zip(bounds, bounds[1:], BAND_COLORS)
     ]
     fig.add_indicator(
-        mode="gauge+number", value=score.total, number=dict(suffix=" / 100"),
+        mode="gauge+number", value=score.total, number=dict(suffix=" / 100", valueformat=".3~f"),
         gauge=dict(axis=dict(range=[0, 100], tickvals=bounds),
                    bar=dict(color=NAVY), steps=steps),
     )

@@ -62,7 +62,7 @@ def template_commentary(a: AnalysisResult) -> CreditCommentary:
     )
     net_debt = ratios.get("net_debt")
     if net_debt and net_debt.status == RatioStatus.VALID and net_debt.value is not None and net_debt.value < 0:
-        leverage += " Interpretation: the confirmed inputs indicate a net cash position."
+                leverage += " The confirmed inputs indicate a net cash position."
     coverage = observation(
         "interest_coverage", "Interest coverage", "x",
         lambda v: "Operating earnings may offer limited interest coverage." if v < 2 else

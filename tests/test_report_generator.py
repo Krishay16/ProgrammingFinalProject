@@ -40,7 +40,13 @@ def test_methodology_uses_the_scoring_owners_file(tmp_path, monkeypatch):
     methodology.write_text("Methodology owned by Person 4", encoding="utf-8")
     monkeypatch.setattr(report_generator, "METHODOLOGY", methodology)
     a = analysis(make_incomplete_financials())
-    assert "Methodology owned by Person 4" in build_html_report(a, template_commentary(a))
+    assert report_generator.methodology_text() == "Methodology owned by Person 4"
+    report = build_html_report(a, template_commentary(a))
+    assert "Methodology page in SolvIQ" in report
+    assert "Ratios and screening scores are taken from the deterministic analysis engine." in report
+    assert "Methodology owned by Person 4" not in report
+    methodology.unlink()
+    assert "The scoring methodology document has not been supplied" in build_html_report(a, template_commentary(a))
 
 
 def test_dashboard_configures_html_download(monkeypatch):
