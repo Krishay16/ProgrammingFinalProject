@@ -1,0 +1,97 @@
+{
+ "_comment": "SYNTHETIC test data, invented values (not a real company). Tests: two period ends in calendar 2023 (2023-01-01 and 2023-12-31) -> keep the later one + warning; 364- and 371-day (52/53-week) years accepted.",
+ "cik": 4,
+ "entityName": "SYNTHETIC FISCAL YEAR CHANGE CORP",
+ "facts": {
+  "us-gaap": {
+   "NetIncomeLoss": {
+    "units": {
+     "USD": [
+      {
+       "start": "2019-12-29",
+       "end": "2020-12-27",
+       "val": 10,
+       "accn": "0000000004-21-000010",
+       "fy": 2020,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2021-03-01"
+      },
+      {
+       "start": "2020-12-27",
+       "end": "2022-01-02",
+       "val": 20,
+       "accn": "0000000004-22-000010",
+       "fy": 2021,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2022-03-01"
+      },
+      {
+       "start": "2022-01-02",
+       "end": "2023-01-01",
+       "val": 30,
+       "accn": "0000000004-23-000010",
+       "fy": 2022,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2023-03-01"
+      },
+      {
+       "start": "2023-01-01",
+       "end": "2023-12-31",
+       "val": 40,
+       "accn": "0000000004-24-000010",
+       "fy": 2023,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2024-03-01"
+      }
+     ]
+    }
+   },
+   "Assets": {
+    "units": {
+     "USD": [
+      {
+       "end": "2020-12-27",
+       "val": 1000,
+       "accn": "0000000004-21-000010",
+       "fy": 2020,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2021-03-01"
+      },
+      {
+       "end": "2022-01-02",
+       "val": 2000,
+       "accn": "0000000004-22-000010",
+       "fy": 2021,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2022-03-01"
+      },
+      {
+       "end": "2023-01-01",
+       "val": 3000,
+       "accn": "0000000004-23-000010",
+       "fy": 2022,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2023-03-01"
+      },
+      {
+       "end": "2023-12-31",
+       "val": 4000,
+       "accn": "0000000004-24-000010",
+       "fy": 2023,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2024-03-01"
+      }
+     ]
+    }
+   }
+  }
+ }
+}
