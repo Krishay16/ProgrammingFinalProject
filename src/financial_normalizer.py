@@ -24,15 +24,30 @@ Selection policy (summary)
 7. Duplicates for the same tag + end (+ currency): the most recently ``filed`` fact wins (this
    picks up 10-K/A amendments and restatements in later 10-Ks); a tie is broken by the highest
    accession number (``accn``).
-8. Tag choice per field: each field has an ordered list of candidates (``FIELD_CANDIDATES``:
-   reported tags first, then derivations). First, the highest-priority candidate that has a
-   value for ALL selected periods is used for every period (consistent series). Only if no
-   single candidate covers all periods, each period uses its own first-found candidate, and a
-   warning is added if the tags used differ between periods.
+8. Tag choice per field: each field has an ordered list of candidates (``_candidates_for``:
+   reported tags first, then fallbacks). Among the REPORTED tags, the highest-priority one that
+   has a value for ALL selected periods is used for every period (consistent series). Only if
+   no single reported tag covers all periods, each period uses its own first-found candidate.
+   Fallbacks are per-period GAP FILLERS: they never win the all-periods step and are used only
+   for a period where the field's preferred reported tag(s) are missing, so a period that
+   reports the value always uses it. Gap fillers are the derivations (short-term debt from
+   components when DebtCurrent is missing, LongTermDebt - LongTermDebtCurrent when
+   LongTermDebtNoncurrent is missing, LiabilitiesAndStockholdersEquity - equity when
+   Liabilities is missing) and ``CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents``
+   when ``CashAndCashEquivalentsAtCarryingValue`` is missing (with a warning per such period:
+   restricted cash may not be available to repay debt, so liquidity may be overstated). A
+   warning is added if the tags/methods used differ between periods.
+   Short-term debt derived from components: if not all of LongTermDebtCurrent,
+   CommercialPaper and ShortTermBorrowings are reported for a period, the note lists the
+   missing ones, and ONE warning lists every affected period and its missing components
+   (short-term debt and leverage may be understated).
 9. Currency: only ISO currency unit keys (3 capital letters, e.g. "USD") are read; "USD/shares"
    etc. are ignored. The period currency is USD when net income is reported in USD, otherwise
    the single other currency found. A field that only exists in another currency is left
    missing with a warning: two currencies are never mixed in one period and never converted.
+   If the selected periods do not all have the same currency, one warning lists the currency
+   per period (figures are still not converted, so comparisons across the change are not
+   meaningful).
 10. Signs: capex and interest_expense are stored as positive amounts (``abs``); if the reported
     value was negative, ``Provenance.note`` says the sign was flipped. Other values keep their
     reported sign.
@@ -192,9 +207,14 @@ class _PeriodCtx:
 
 @dataclass(frozen=True)
 class _Candidate:
-    """A way to obtain a field: either a reported tag or a derivation."""
+    """A way to obtain a field: either a reported tag or a derivation.
+
+    ``gap_filler`` candidates never win the all-periods consistency step; they are only used
+    for a period where no higher-priority candidate has a value.
+    """
     name: str
     resolve: Callable[[_PeriodCtx], Optional[_Resolved]]
+    gap_filler: bool = False
 
 
 # --------------------------------------------------------------------------- parsing
@@ -321,7 +341,7 @@ def _select_periods(index: _FactIndex, max_periods: int,
 
 # --------------------------------------------------------------------------- field resolvers
 
-def _reported(tag: str, note: Optional[str] = None) -> _Candidate:
+def _reported(tag: str, note: Optional[str] = None, gap_filler: bool = False) -> _Candidate:
     """Candidate that takes the value of one reported tag."""
     def resolve(ctx: _PeriodCtx) -> Optional[_Resolved]:
         fact = ctx.get(tag)
@@ -330,7 +350,7 @@ def _reported(tag: str, note: Optional[str] = None) -> _Candidate:
         return _Resolved(value=fact.val, tag=tag, origin=ValueOrigin.REPORTED,
                          location=fact.location, filing_date=fact.filed,
                          original_text=_raw_text(fact.val), note=note)
-    return _Candidate(name=tag, resolve=resolve)
+    return _Candidate(name=tag, resolve=resolve, gap_filler=gap_filler)
 
 
 def _raw_text(val: float) -> str:
@@ -352,19 +372,33 @@ def _derived(value: float, facts: list[_Fact], tag: str, explanation: str) -> _R
                      note=f"{explanation} Components: {_component_note(facts)}.")
 
 
+def _join_and(items: list[str]) -> str:
+    """'A', 'A and B', 'A, B and C'."""
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def _missing_short_term_debt_components(ctx: _PeriodCtx) -> list[str]:
+    """Short-term debt component tags not reported for this period."""
+    return [t for t in SHORT_TERM_DEBT_COMPONENTS if ctx.get(t) is None]
+
+
 def _short_term_debt_from_components(ctx: _PeriodCtx) -> Optional[_Resolved]:
     """Sum of whichever of LongTermDebtCurrent, CommercialPaper, ShortTermBorrowings exist.
 
-    Only used when DebtCurrent is absent (so nothing is counted twice). None if no component
-    is present. Lease liabilities and accounts payable are never included.
+    Never added to DebtCurrent (so nothing is counted twice). None if no component is
+    present. Lease liabilities and accounts payable are never included. The note lists the
+    components that were not reported.
     """
     facts = [f for f in (ctx.get(t) for t in SHORT_TERM_DEBT_COMPONENTS) if f is not None]
     if not facts:
         return None
     used = [f.tag for f in facts]
+    missing = _missing_short_term_debt_components(ctx)
+    missing_text = (f" Not reported (so not included): {', '.join(missing)}."
+                    if missing else "")
     return _derived(sum(f.val for f in facts), facts, " + ".join(used),
                     "Derived: DebtCurrent not reported, so short-term debt = sum of the "
-                    f"components found ({', '.join(used)}).")
+                    f"components found ({', '.join(used)}).{missing_text}")
 
 
 def _long_term_debt_from_total(ctx: _PeriodCtx) -> Optional[_Resolved]:
@@ -398,33 +432,42 @@ def _total_liabilities_from_balance(ctx: _PeriodCtx) -> Optional[_Resolved]:
 
 
 def _candidates_for(field: str) -> list[_Candidate]:
-    """Ordered candidates for a field: reported tags first, then derivations."""
+    """Ordered candidates for a field: reported tags first, then gap-filler fallbacks.
+
+    Derivations are only reached for a period where every reported tag before them is
+    missing, so they are never used for a period that reports the field.
+    """
     if field == "cash":
         return [_reported("CashAndCashEquivalentsAtCarryingValue"),
-                _reported(RESTRICTED_CASH_TAG,
+                _reported(RESTRICTED_CASH_TAG, gap_filler=True,
                           note="Includes restricted cash and restricted cash equivalents "
-                               "(CashAndCashEquivalentsAtCarryingValue not reported).")]
+                               "(CashAndCashEquivalentsAtCarryingValue not reported for this "
+                               "period).")]
     candidates = [_reported(tag) for tag in TAG_MAP.get(field, [])]
     if field == "short_term_debt":
         candidates.append(_Candidate("short-term debt components",
-                                     _short_term_debt_from_components))
+                                     _short_term_debt_from_components, gap_filler=True))
     elif field == "long_term_debt":
         candidates.append(_Candidate("LongTermDebt - LongTermDebtCurrent",
-                                     _long_term_debt_from_total))
+                                     _long_term_debt_from_total, gap_filler=True))
     elif field == "total_liabilities":
         candidates.append(_Candidate("LiabilitiesAndStockholdersEquity - equity",
-                                     _total_liabilities_from_balance))
+                                     _total_liabilities_from_balance, gap_filler=True))
     return candidates
 
 
 def _resolve_field(field: str, periods: list[_PeriodCtx]) -> list[Optional[_Resolved]]:
     """Resolve one field for all periods using the consistency rule.
 
-    1. The highest-priority candidate with a value in EVERY period is used for all periods.
-    2. Otherwise each period uses its own first candidate that has a value.
+    1. The highest-priority non-gap-filler candidate with a value in EVERY period is used for
+       all periods.
+    2. Otherwise each period uses its own first candidate that has a value (gap fillers
+       included).
     """
     candidates = _candidates_for(field)
     for cand in candidates:
+        if cand.gap_filler:
+            continue
         results = [cand.resolve(ctx) for ctx in periods]
         if results and all(r is not None for r in results):
             return results
@@ -483,6 +526,52 @@ def _other_currency_warning(field: str, ctx: _PeriodCtx) -> Optional[str]:
     return (f"FY{ctx.end.year}: {FIELD_LABELS[field]} is reported only in "
             f"{', '.join(others)}, but this period is in {ctx.currency}. It was left missing "
             "because currencies are never mixed or converted.")
+
+
+def _restricted_cash_warning(ctx: _PeriodCtx, res: Optional[_Resolved]) -> Optional[str]:
+    """Warning if this period's cash came from the restricted-cash gap filler."""
+    if res is None or res.tag != RESTRICTED_CASH_TAG:
+        return None
+    return (f"FY{ctx.end.year}: cash includes restricted cash "
+            "(CashAndCashEquivalentsAtCarryingValue not reported), which may not be available "
+            "to repay debt, so liquidity ratios may be overstated.")
+
+
+def _incomplete_short_term_debt_warning(
+        periods: list[_PeriodCtx], resolved: list[Optional[_Resolved]]) -> Optional[str]:
+    """ONE warning listing every period whose derived short-term debt lacks components."""
+    parts = []
+    for ctx, res in zip(periods, resolved):  # newest first
+        if res is None or res.origin != ValueOrigin.DERIVED:
+            continue
+        missing = _missing_short_term_debt_components(ctx)
+        if not missing:
+            continue
+        used = [t for t in SHORT_TERM_DEBT_COMPONENTS if t not in missing]
+        parts.append(f"FY{ctx.end.year}: {_join_and(used)} only, {_join_and(missing)} "
+                     "not reported")
+    if not parts:
+        return None
+    return ("Short-term debt is the sum of the reported components only ("
+            f"{'; '.join(parts)}). If the company has the missing items, short-term debt and "
+            "leverage ratios may be understated.")
+
+
+def _currency_change_warning(periods: list[FinancialPeriod]) -> Optional[str]:
+    """One warning if the selected periods do not all use the same currency."""
+    if len({p.currency for p in periods}) <= 1:
+        return None
+    groups: list[tuple[str, list[int]]] = []  # consecutive runs, oldest first
+    for p in sorted(periods, key=lambda p: p.period_end):
+        if groups and groups[-1][0] == p.currency:
+            groups[-1][1].append(p.fiscal_year)
+        else:
+            groups.append((p.currency, [p.fiscal_year]))
+    detail = "; ".join(
+        (f"FY{years[0]}" if len(years) == 1 else f"FY{years[0]}-FY{years[-1]}") + f": {cur}"
+        for cur, years in groups)
+    return (f"Reporting currency changes between periods ({detail}). Figures are never "
+            "converted, so comparisons across the change are not meaningful.")
 
 
 def _missing_warning(period: FinancialPeriod) -> Optional[str]:
@@ -570,6 +659,9 @@ def normalize_company_facts(facts: dict, company: CompanyInfo,
         switch = _tag_switch_warning(field, selected, values[field])
         if switch:
             warnings.append(switch)
+    incomplete_std = _incomplete_short_term_debt_warning(selected, values["short_term_debt"])
+    if incomplete_std:
+        warnings.append(incomplete_std)
 
     periods: list[FinancialPeriod] = []
     for i, ctx in enumerate(selected):
@@ -580,6 +672,9 @@ def normalize_company_facts(facts: dict, company: CompanyInfo,
             form_type=ni.form if ni else None, is_annual=True, currency=ctx.currency,
             original_units=Units.UNITS,
             **{f: _to_financial_value(values[f][i], source_ref) for f in ALL_FIELDS})
+        restricted = _restricted_cash_warning(ctx, values["cash"][i])
+        if restricted:
+            warnings.append(restricted)
         for field in ALL_FIELDS:
             if field not in ENGINE_DERIVED_FIELDS and period.get(field) is None:
                 other = _other_currency_warning(field, ctx)
@@ -590,6 +685,9 @@ def normalize_company_facts(facts: dict, company: CompanyInfo,
             warnings.append(missing)
         periods.append(period)
 
+    currency_change = _currency_change_warning(periods)
+    if currency_change:
+        warnings.append(currency_change)
     if len(periods) < max_periods:
         warnings.append(f"Only {len(periods)} annual period(s) with core data were found "
                         f"(up to {max_periods} requested).")

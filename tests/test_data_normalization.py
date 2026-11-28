@@ -389,3 +389,193 @@ def test_every_field_present_on_every_period(msft):
     for p in msft.periods:
         for field in ALL_FIELDS:
             assert hasattr(p, field)
+
+
+# --------------------------------------------------------------------------- review follow-ups
+# Inline SYNTHETIC companyfacts (invented values, not a real company). Years end 31 Dec.
+
+def inline_facts(tags: dict[str, dict[int, float]],
+                 currency_by_year: dict[int, str] | None = None) -> dict:
+    """Build a minimal companyfacts dict: {tag: {year: value}}, one 10-K per year."""
+    currency_by_year = currency_by_year or {}
+    us_gaap: dict = {}
+    for tag, by_year in tags.items():
+        units: dict[str, list] = {}
+        for year, val in by_year.items():
+            accn = f"0000000099-{(year + 1) % 100:02d}-000001"
+            row = {"end": f"{year}-12-31", "val": val, "accn": accn, "fy": year, "fp": "FY",
+                   "form": "10-K", "filed": f"{year + 1}-02-15"}
+            if tag in fn.FLOW_TAGS:
+                row["start"] = f"{year}-01-01"
+            units.setdefault(currency_by_year.get(year, "USD"), []).append(row)
+        us_gaap[tag] = {"units": units}
+    return {"cik": 99, "entityName": "SYNTHETIC INLINE CO", "facts": {"us-gaap": us_gaap}}
+
+
+CORE = {"NetIncomeLoss": {2022: 10, 2023: 11, 2024: 12},
+        "Assets": {2022: 100, 2023: 110, 2024: 120}}
+
+
+def normalize_inline(tags: dict, **kw) -> CompanyFinancials:
+    return normalize_company_facts(inline_facts({**CORE, **tags}, **kw),
+                                   CompanyInfo(name="SYNTHETIC INLINE CO", cik="99"))
+
+
+# 1. Short-term debt from incomplete components
+
+MSFT_STD_WARNING = (
+    "Short-term debt is the sum of the reported components only ("
+    "FY2026: LongTermDebtCurrent only, CommercialPaper and ShortTermBorrowings not reported; "
+    "FY2025: LongTermDebtCurrent and CommercialPaper only, ShortTermBorrowings not reported; "
+    "FY2024: LongTermDebtCurrent and CommercialPaper only, ShortTermBorrowings not reported). "
+    "If the company has the missing items, short-term debt and leverage ratios may be "
+    "understated.")
+
+
+def test_msft_incomplete_short_term_debt_one_combined_warning(msft):
+    assert MSFT_STD_WARNING in msft.warnings
+    assert sum("Short-term debt is the sum" in w for w in msft.warnings) == 1
+    note = msft.period(2026).short_term_debt.provenance.note
+    assert "Not reported (so not included): CommercialPaper, ShortTermBorrowings." in note
+    assert "DebtCurrent not reported" in note
+
+
+def test_incomplete_short_term_debt_warning_and_note_synthetic(debt):
+    # FY2022: LongTermDebtCurrent 250 + ShortTermBorrowings 100, no CommercialPaper.
+    std = debt.period(2022).short_term_debt
+    assert std.value == 350
+    assert "Not reported (so not included): CommercialPaper." in std.provenance.note
+    # FY2023 uses reported DebtCurrent and FY2021 has no short-term debt -> only FY2022 listed.
+    assert ("Short-term debt is the sum of the reported components only (FY2022: "
+            "LongTermDebtCurrent and ShortTermBorrowings only, CommercialPaper not reported). "
+            "If the company has the missing items, short-term debt and leverage ratios may be "
+            "understated.") in debt.warnings
+
+
+def test_complete_short_term_debt_components_no_warning():
+    f = normalize_inline({"LongTermDebtCurrent": {2022: 1, 2023: 2, 2024: 3},
+                          "CommercialPaper": {2022: 10, 2023: 20, 2024: 30},
+                          "ShortTermBorrowings": {2022: 100, 2023: 200, 2024: 300}})
+    std = f.period(2024).short_term_debt
+    assert std.value == 333
+    assert std.provenance.tag == "LongTermDebtCurrent + CommercialPaper + ShortTermBorrowings"
+    assert "Not reported" not in std.provenance.note
+    assert "Short-term debt is the sum" not in warnings_text(f)
+
+
+# 2. Restricted cash is a per-period gap filler only
+
+RESTRICTED = "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"
+CLEAN = "CashAndCashEquivalentsAtCarryingValue"
+
+
+def test_clean_cash_2_of_3_years_restricted_all_3_years():
+    f = normalize_inline({CLEAN: {2023: 50, 2024: 60},
+                          RESTRICTED: {2022: 45, 2023: 55, 2024: 65}})
+    # Clean tag used wherever it exists; restricted only fills the FY2022 gap.
+    assert {p.fiscal_year: (p.get("cash"), p.cash.provenance.tag) for p in f.periods} == {
+        2024: (60, CLEAN), 2023: (50, CLEAN), 2022: (45, RESTRICTED)}
+    assert f.period(2024).cash.provenance.note is None
+    assert f.period(2023).cash.provenance.note is None
+    assert "restricted cash" in f.period(2022).cash.provenance.note
+    assert ("FY2022: cash includes restricted cash (CashAndCashEquivalentsAtCarryingValue not "
+            "reported), which may not be available to repay debt, so liquidity ratios may be "
+            "overstated.") in f.warnings
+    restricted_warnings = [w for w in f.warnings if "cash includes restricted cash" in w]
+    assert len(restricted_warnings) == 1
+    text = warnings_text(f)
+    assert "Cash and cash equivalents: the SEC tag used differs between periods" in text
+    assert f"FY2024: {CLEAN}; FY2023: {CLEAN}; FY2022: {RESTRICTED}" in text
+
+
+def test_restricted_cash_only_used_everywhere_with_warning_per_year():
+    f = normalize_inline({RESTRICTED: {2022: 45, 2023: 55, 2024: 65}})
+    assert {p.cash.provenance.tag for p in f.periods} == {RESTRICTED}
+    assert [p.get("cash") for p in f.periods] == [65, 55, 45]
+    for year in (2022, 2023, 2024):
+        assert f"FY{year}: cash includes restricted cash" in warnings_text(f)
+    assert "the SEC tag used differs" not in warnings_text(f)  # one tag for all years
+
+
+def test_clean_cash_all_years_no_restricted_warning():
+    f = normalize_inline({CLEAN: {2022: 40, 2023: 50, 2024: 60},
+                          RESTRICTED: {2022: 45, 2023: 55, 2024: 65}})
+    assert {p.cash.provenance.tag for p in f.periods} == {CLEAN}
+    assert "restricted cash" not in warnings_text(f)
+
+
+# 2b. Derivations are per-year gap fillers: a year that reports the value uses it
+
+def test_debt_current_2_of_3_years_components_fill_the_gap_only():
+    f = normalize_inline({"DebtCurrent": {2023: 70, 2024: 80},
+                          "LongTermDebtCurrent": {2022: 5, 2023: 6, 2024: 7},
+                          "CommercialPaper": {2022: 1, 2023: 2, 2024: 3}})
+    std = {p.fiscal_year: p.short_term_debt for p in f.periods}
+    assert {y: (v.value, v.provenance.tag, v.provenance.origin) for y, v in std.items()} == {
+        2024: (80, "DebtCurrent", ValueOrigin.REPORTED),
+        2023: (70, "DebtCurrent", ValueOrigin.REPORTED),
+        2022: (6, "LongTermDebtCurrent + CommercialPaper", ValueOrigin.DERIVED)}
+    assert std[2024].provenance.note is None
+    assert "DebtCurrent not reported" in std[2022].provenance.note
+    assert "Not reported (so not included): ShortTermBorrowings." in std[2022].provenance.note
+    text = warnings_text(f)
+    assert ("Short-term debt (incl. current portion of LTD): the SEC tag used differs between "
+            "periods (FY2024: DebtCurrent; FY2023: DebtCurrent; FY2022: LongTermDebtCurrent + "
+            "CommercialPaper)") in text
+    # Only the derived year is listed in the combined component warning.
+    assert ("Short-term debt is the sum of the reported components only (FY2022: "
+            "LongTermDebtCurrent and CommercialPaper only, ShortTermBorrowings not reported).") \
+        in text
+
+
+def test_reported_value_always_wins_over_derivation_covering_all_years():
+    f = normalize_inline({
+        # Reported tags exist for FY2024 only; derivations could cover all three years.
+        "DebtCurrent": {2024: 999},
+        "LongTermDebtCurrent": {2022: 5, 2023: 6, 2024: 7},
+        "LongTermDebtNoncurrent": {2024: 888},
+        "LongTermDebt": {2022: 50, 2023: 60, 2024: 70},
+        "Liabilities": {2024: 777},
+        "LiabilitiesAndStockholdersEquity": {2022: 100, 2023: 110, 2024: 120},
+        "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest":
+            {2022: 30, 2023: 35, 2024: 40},
+    })
+    p24, p23, p22 = f.period(2024), f.period(2023), f.period(2022)
+    assert (p24.get("short_term_debt"), p24.get("long_term_debt"),
+            p24.get("total_liabilities")) == (999, 888, 777)
+    assert (p23.get("short_term_debt"), p23.get("long_term_debt"),
+            p23.get("total_liabilities")) == (6, 54, 75)
+    assert (p22.get("short_term_debt"), p22.get("long_term_debt"),
+            p22.get("total_liabilities")) == (5, 45, 70)
+    text = warnings_text(f)
+    for field, tag in (("short_term_debt", "DebtCurrent"),
+                       ("long_term_debt", "LongTermDebtNoncurrent"),
+                       ("total_liabilities", "Liabilities")):
+        v24, v23 = getattr(p24, field), getattr(p23, field)
+        assert v24.provenance.origin == ValueOrigin.REPORTED
+        assert v24.provenance.tag == tag
+        assert v23.provenance.origin == ValueOrigin.DERIVED
+        assert f"{tag} not reported" in v23.provenance.note
+        assert f"FY2024: {tag}; FY2023: " in text  # tag-switch warning flags mixed methods
+    assert "is reported for this period" not in text
+    assert all("is reported for this period" not in (getattr(p, fld).provenance.note or "")
+               for p in f.periods
+               for fld in ("short_term_debt", "long_term_debt", "total_liabilities"))
+
+
+# 3. Currency change across fiscal years
+
+def test_currency_change_between_periods_warns_once_no_conversion():
+    f = normalize_inline({}, currency_by_year={2022: "EUR"})
+    assert [p.currency for p in f.periods] == ["USD", "USD", "EUR"]
+    assert f.period(2022).get("net_income") == 10  # EUR value, not converted
+    assert f.period(2024).get("net_income") == 12
+    expected = ("Reporting currency changes between periods (FY2022: EUR; FY2023-FY2024: USD). "
+                "Figures are never converted, so comparisons across the change are not "
+                "meaningful.")
+    assert f.warnings.count(expected) == 1
+
+
+def test_no_currency_change_warning_when_single_currency(msft):
+    assert "Reporting currency changes" not in warnings_text(msft)
+    assert "Reporting currency changes" not in warnings_text(synthetic("non_usd"))

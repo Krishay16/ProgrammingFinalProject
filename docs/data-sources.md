@@ -128,15 +128,35 @@ into our shared `CompanyFinancials` model. These rules decide **which numbers we
 9. **Duplicates** (same tag, same end date): the **most recently filed** value wins, so
    amendments (10-K/A) and restatements in later 10-Ks replace older figures. If two facts
    were filed on the same day, the higher accession number wins.
-10. **Which tag per field.** Each field has an ordered list of candidate tags (below). For
-    each field we first look for the highest-priority tag that has a value in **all** selected
-    years, and use it for every year, so the series is consistent. Only if no single tag covers
-    all years does each year use its own first available tag; then a warning lists the tag
-    used per year, because definitions may differ.
+10. **Which tag per field.** Each field has an ordered list of candidates (below): reported
+    tags first, then fallbacks. Among the **reported** tags, we first look for the
+    highest-priority one that has a value in **all** selected years, and use it for every year,
+    so the series is consistent. Only if no single reported tag covers all years does each
+    year use its own first available candidate; then a warning lists the tag or method used
+    per year, because definitions may differ.
+    * **Fallbacks are gap fillers for single years.** They are used only for a year in which
+      the field's reported tag(s) are missing, never for a year that reports the value, and
+      never for all years just because they happen to cover them. The fallbacks are the
+      **derivations** (short-term debt from components when `DebtCurrent` is missing,
+      `LongTermDebt` minus `LongTermDebtCurrent` when `LongTermDebtNoncurrent` is missing,
+      `LiabilitiesAndStockholdersEquity` minus equity when `Liabilities` is missing) and
+      **restricted cash** (`CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents` when
+      `CashAndCashEquivalentsAtCarryingValue` is missing). Each year that uses restricted cash
+      gets a warning: restricted cash may not be available to repay debt, so liquidity ratios
+      may be overstated. If years mix a reported tag and a fallback, the usual tag-switch
+      warning is also shown.
+    * **Short-term debt from components:** if short-term debt is derived and not all three
+      components (`LongTermDebtCurrent`, `CommercialPaper`, `ShortTermBorrowings`) are reported
+      for a year, the value's note lists the missing ones, and **one** warning lists every
+      affected year with its missing components: short-term debt and leverage ratios may be
+      understated (e.g. Microsoft FY2026 reports only `LongTermDebtCurrent`).
 11. **Currency:** we read currency units only (e.g. `USD`), never per-share units. A period is
     in USD when its net income is reported in USD, otherwise in the single other currency
     found. A number that exists only in a different currency is left blank with a warning:
-    we never mix currencies in one period and never convert.
+    we never mix currencies in one period and never convert. If the selected years do not all
+    use the same currency, one warning lists the currency per year (e.g. "FY2024: EUR;
+    FY2025-FY2026: USD"): figures are still not converted, so comparisons across the change
+    are not meaningful.
 12. **Signs:** capital expenditure and interest expense are stored as positive amounts. If the
     SEC value was negative, the value's note says the sign was flipped. Everything else keeps
     its reported sign (losses negative; investing/financing cash flows keep their sign).
@@ -164,12 +184,12 @@ into our shared `CompanyFinancials` model. These rules decide **which numbers we
 | Interest expense (stored positive) | `InterestExpense`, `InterestExpenseNonoperating`, `InterestExpenseDebt` |
 | Net income | `NetIncomeLoss` |
 | D&A | `DepreciationDepletionAndAmortization`, `DepreciationAndAmortization`, `DepreciationAmortizationAndAccretionNet` |
-| Cash | `CashAndCashEquivalentsAtCarryingValue`; fallback `CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents` (note: includes restricted cash) |
+| Cash | `CashAndCashEquivalentsAtCarryingValue`; per-year gap filler `CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents`, only for a year where the first tag is missing (note and warning: includes restricted cash) |
 | Current assets / Total assets / Current liabilities | `AssetsCurrent` / `Assets` / `LiabilitiesCurrent` |
-| Total liabilities | `Liabilities`; else **derived** `LiabilitiesAndStockholdersEquity` minus equity including non-controlling interest (or, if that is not reported, minus `StockholdersEquity`, with a note that the result may include non-controlling interest) |
+| Total liabilities | `Liabilities`; for a year without it, **derived** `LiabilitiesAndStockholdersEquity` minus equity including non-controlling interest (or, if that is not reported, minus `StockholdersEquity`, with a note that the result may include non-controlling interest) |
 | Total equity | `StockholdersEquity`, `StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest` |
-| Short-term debt | `DebtCurrent`; else **derived** sum of whichever of `LongTermDebtCurrent`, `CommercialPaper`, `ShortTermBorrowings` are reported (blank if none). If `DebtCurrent` exists, components are never added (no double counting). Leases and accounts payable are never included. |
-| Long-term debt | `LongTermDebtNoncurrent`; else **derived** `LongTermDebt` minus `LongTermDebtCurrent`, only if both are reported |
+| Short-term debt | `DebtCurrent`; for a year without it, **derived** sum of whichever of `LongTermDebtCurrent`, `CommercialPaper`, `ShortTermBorrowings` are reported (blank if none; note and warning list the missing components). Components are never added to `DebtCurrent` (no double counting). Leases and accounts payable are never included. |
+| Long-term debt | `LongTermDebtNoncurrent`; for a year without it, **derived** `LongTermDebt` minus `LongTermDebtCurrent`, only if both are reported |
 | Operating / investing / financing cash flow | `NetCashProvidedByUsedInOperatingActivities` / `...InvestingActivities` / `...FinancingActivities` |
 | Capex (stored positive) | `PaymentsToAcquirePropertyPlantAndEquipment` |
 | EBITDA | not taken from the SEC (derived by the engine) |
