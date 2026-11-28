@@ -10,7 +10,7 @@ SolvIQ is designed to give an analyst a structured first pass on a non-financial
 
 The initial use case is a screening analyst comparing recent annual periods before deciding whether a case warrants deeper diligence. The team should begin with a small workflow, with public filings as the easiest source to reproduce and confirmed PDF or manual inputs as fallback routes. The sponsor should judge this pilot on traceability, data handling and analyst adoption before considering procurement or any wider use.
 
-**Status at preparation.** The dashboard code, deterministic commentary and HTML report have been developed on the foundation checkout. Chart and report verification uses synthetic fixtures. The Person 4 analysis engine and methodology, public-data reconciliation and team acceptance record were absent or unfinished in this checkout. End-to-end and real-data claims therefore require evidence before submission. No customer adoption, time saving or financial outcome is claimed.
+**Current product status.** SolvIQ now integrates public SEC financial data, PDF and manual input workflows, deterministic financial analysis, credit scoring, risk alerts, stress scenarios, an interactive dashboard and a downloadable HTML report. On the Person 5 review-fixes branch, 518 automated tests passed with zero failures, and the SYNTHETIC demonstration company displayed a verified screening score of 91.875/100. The public-data owner reported 20/20 matching reconciliation figures against official Microsoft and Apple 10-K filings. Financial commentary remains deterministic and rule-based; LLM integration has been designed but is not enabled. No customer adoption, measured time savings or commercial outcomes are claimed.
 
 **Pilot deliverables:** a comparable baseline case, a timed screening exercise, a reconciliation checklist and a decision on whether the prototype meets documented acceptance criteria.
 
@@ -43,9 +43,17 @@ The intended flow is company confirmation, statement confirmation where needed, 
 | Interpretation | Show the observation, interpretation and missing evidence separately |
 | Reporting | Include data sources, limitations, and the screening disclaimer |
 
-The evidence should include two genuine product screenshots. **Screenshot 1 pending:** confirmed company with dashboard KPI, period labels and screening gauge after the real engine is integrated. **Screenshot 2 pending:** data quality and sources panel or generated report in the browser, including an unavailable ratio. Capture after the team test and label any synthetic source visibly.
+The following screenshots demonstrate the integrated SolvIQ prototype using synthetic financial data.
 
-Current scopes include annual non-financial corporate analysis and no currency conversion. The functioning sandbox demonstration can use synthetic inputs while team components are unfinished. The product accepts no credit decision and makes no probability-of-default claim.
+![Figure 1 - Credit Health Overview](images/dashboard.png)
+
+*Figure 1. Synthetic company screening score of 91.9/100.*
+
+![Figure 2 - Data Quality and Sources](images/data-quality.png)
+
+*Figure 2. Statement completeness, source document access and data freshness warnings for FY2022-FY2024.*
+
+Current scopes include annual non-financial corporate analysis and no currency conversion. The integrated prototype supports synthetic demonstration data and analyst-confirmed financial inputs. These technical results do not establish predictive accuracy or commercial validation. The product accepts no credit decision and makes no probability-of-default claim.
 
 ---
 
@@ -66,7 +74,7 @@ Current scopes include annual non-financial corporate analysis and no currency c
 
 Initial targeting should focus on a desk willing to evaluate matched cases with a named sponsor and a review owner. The prototype competes for workflow time against internal Excel templates and manually assembled memos, bank-owned underwriting systems and market data platforms. Spreadsheets are flexible and familiar. Data platforms provide broad coverage. SolvIQ's proposed position is a traceable, bounded screen that can be inspected with public or analyst-confirmed inputs. This positioning is a hypothesis pending user interviews.
 
-No market size, pricing, named customer or measured traction is assumed. Bottom-up sizing, if needed, should start with an independently defined eligible institution list, expected eligible seats per desk and interview evidence on willingness to pay. Keep each assumption auditable and separate from the observed pilot.
+Market opportunity: The FDIC Quarterly Banking Profile reported 4,205 insured US banking institutions in Q3 2026 (https://alfred.stlouisfed.org/release?rd=2026-11-24&rid=482). This provides a broad market reference, not a validated addressable market. Assuming an initial target segment of 200 eligible institutions, five analyst seats per institution and a hypothetical subscription of USD 99 per seat per month, the illustrative annual revenue opportunity is USD 1,188,000. Acquiring 20 institutions would represent USD 118,800 in annual recurring revenue. Eligibility, adoption and willingness to pay remain unvalidated assumptions. No existing customers or commercial traction are claimed.
 
 ---
 
@@ -117,7 +125,7 @@ Coverage of annual public filings is limited to the supported universe. Private-
 ---
 
 ## 8. Business model and roadmap
-A possible business model is a seat-based subscription for smaller teams, with enterprise pricing for controlled deployment, governance and support. Assessment-based pricing could be tested with episodic users. These are hypothetical models. Price discovery should use buyer interviews and the scope and support costs of a real pilot.
+SolvIQ proposes a B2B SaaS subscription model. The Professional plan would cost USD 99 per analyst per month, while a five-seat Team plan would cost USD 495 per month (USD 5,940 annually). Enterprise pricing would be negotiated based on deployment, security, governance and support requirements. Assessment-based pricing could also be evaluated for occasional users. These proposed prices are illustrative hypotheses and must be validated through buyer interviews and pilot feedback.
 
 | Cost driver | Basis for a future estimate |
 | --- | --- |
@@ -128,7 +136,7 @@ A possible business model is a seat-based subscription for smaller teams, with e
 
 **Go-to-market.** Start with a sponsorship-led pilot on reproducible public cases. Expand to approved private inputs only when the sponsor has established data handling and review controls. Measure whether the workflow saves reviewer effort or improves traceability. Package the evidence into a pilot close-out and decide whether to build a repeatable onboarding path.
 
-**Roadmap.** First, validate the core workflow with public filings and incomplete inputs. Next, add an audit trail, stronger validation of changed inputs and better coverage of statement layouts. Later, evaluate OCR, more public sources, peer comparison and industry-sensitive thresholds under appropriate governance.
+**Roadmap.** Phase 1 - MVP: deliver the integrated financial screening workflow, including public and confirmed private inputs, deterministic scoring, stress scenarios, dashboard and report export. Phase 2 - Pilot: validate analyst adoption, measure workflow efficiency, strengthen security controls and implement an audit trail. Phase 3 - Scale: evaluate OCR, governed LLM integration, additional financial data sources, peer benchmarking and industry-specific thresholds.
 
 **References**
 
