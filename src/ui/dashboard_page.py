@@ -59,10 +59,10 @@ def _overview(a: AnalysisResult) -> None:
     if period is None:
         return
     year = period.fiscal_year
-    ebitda, _ = ebitda_value(period)
+    ebitda, ebitda_note = ebitda_value(period)
     metrics = [
         ("Revenue", period.get("revenue")),
-        ("EBITDA", ebitda) if ebitda is not None else ("EBIT", period.get("ebit")),
+        ("EBITDA (derived)" if ebitda_note else "EBITDA", ebitda) if ebitda is not None else ("EBIT", period.get("ebit")),
         ("Total debt", ratio_value(a, year, "total_debt")),
         ("Net debt", ratio_value(a, year, "net_debt")),
     ]
